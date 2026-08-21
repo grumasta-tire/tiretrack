@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Dashboard</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  .kpi-select { font-size: 11.5px; padding: 3px 6px; border-radius: 5px; border: 1px solid var(--border); background: #fff; font-family: inherit; }
+  .filter-toggle-btn { background: #ECEEF1; color: var(--navy); border: none; padding: 8px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer; margin-bottom: 12px; }
+  .filter-toggle-btn:hover { background: #dfe2e6; }
+</style>
+</head>
+<body data-page="dashboard">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Dashboard</h1>
+      <div class="subtitle">Live overview of receiving, delivery, and current stock.</div>
+    </div>
+
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-label" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Delivery Count</span>
+          <select class="kpi-select" id="kpiGranularity" onchange="computeKPIs()">
+            <option value="day">Day</option>
+            <option value="week">Week</option>
+            <option value="month" selected>Month</option>
+            <option value="year">Year</option>
+          </select>
+        </div>
+        <div class="kpi-value" id="kpiDeliveries">–</div>
+        <div class="kpi-foot"><span id="kpiDeliveriesDelta"></span> <span class="muted" id="kpiDeliveriesDeltaLabel"></span></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Total Tires Received (All-Time)</div>
+        <div class="kpi-value" id="kpiReceived">–</div>
+        <div class="kpi-foot muted">Every S/N ever recorded, regardless of date filter</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Pending Deliveries</div>
+        <div class="kpi-value" id="kpiPending">–</div>
+        <div class="kpi-foot muted">Delivery notes still <span class="badge badge-open">OPEN</span></div>
+      </div>
+    </div>
+
+    <button class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleFilters()">⚙ Show Filters</button>
+    <div class="filter-bar" id="filterBar" style="display:none;">
+      <div class="filter-field">
+        <label>Customer</label>
+        <select id="filterCustomer"><option value="">All Customers</option></select>
+      </div>
+      <div class="filter-field"><label>From</label><input type="date" id="filterFrom"></div>
+      <div class="filter-field"><label>To</label><input type="date" id="filterTo"></div>
+      <div class="filter-field"><label>Sort Donut By</label>
+        <select id="sortSelect"><option value="qty">Quantity (highest first)</option><option value="name">Customer Name (A–Z)</option></select>
+      </div>
+      <div class="filter-field"><button class="btn-primary btn-sm" onclick="applyFilters()">Apply</button></div>
+      <div class="filter-field"><button class="btn-secondary btn-sm" onclick="clearFilters()">Clear</button></div>
+    </div>
+
+    <div class="chart-row">
+      <div class="card chart-card">
+        <h2>Live Delivery Tracking — by Customer</h2>
+        <div class="subtitle" id="activeFilterLabel" style="margin-bottom:10px;"></div>
+        <div class="chart-wrap"><canvas id="donutChart"></canvas></div>
+        <div class="chart-legend-list" id="donutLegend"></div>
+      </div>
+      <div class="card chart-card">
+        <h2>Actual Stock Summary — by Tire Size &amp; Pattern</h2>
+        <div class="subtitle" style="margin-bottom:10px;">Only counts tires currently sitting in JKT-WHS or BPN-WHS.</div>
+        <div class="chart-wrap"><canvas id="stockChart"></canvas></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="status-rules.js"></script>
+<script src="ui-utils.js"></script>
+<script>
+  AppShell.init();
+
+  const COLORS = ['#0F2A47', '#E8863A', '#2563EB', '#16A34A', '#9333EA', '#DC2626', '#0891B2', '#CA8A04'];
+  let donutChart, stockChart;
+  let deliveries = [], receivings = [], stock = [];
+
+  function toggleFilters() {
+    const bar = document.getElementById('filterBar');
+    const btn = document.getElementById('filterToggleBtn');
+    const show = bar.style.display === 'none';
+    bar.style.display = show ? 'flex' : 'none';
+    btn.textContent = show ? '⚙ Hide Filters' : '⚙ Show Filters';
+  }
+
+  function defaultMonthRange() {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const to = now.toISOString().slice(0, 10);
+    return { from, to };
+  }
+
+  function clearFilters() {
+    const { from, to } = defaultMonthRange();
+    document.getElementById('filterFrom').value = from;
+    document.getElementById('filterTo').value = to;
+    document.getElementById('filterCustomer').value = '';
+    document.getElementById('sortSelect').value = 'qty';
+    applyFilters();
+  }
+
+  async function loadData() {
+    const errors = [];
+    async function safe(promiseFn, fallback) {
+      try { return await promiseFn(); } catch (err) { errors.push(err.message); return fallback; }
+    }
+
+    deliveries = await safe(() => DeliveryDB.list(), []);
+    receivings = await safe(() => ReceivingDB.list(), []);
+    stock = await safe(() => InventoryDB.list(), []);
+    const customers = await safe(() => RefDB.customers(), []);
+
+    document.getElementById('filterCustomer').innerHTML = '<option value="">All Customers</option>' + customers.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+
+    const { from, to } = defaultMonthRange();
+    document.getElementById('filterFrom').value = from;
+    document.getElementById('filterTo').value = to;
+
+    computeKPIs();
+    applyFilters();
+
+    if (errors.length) {
+      showErrorDialog('Some data failed to load, so the dashboard may be incomplete:\n\n' + errors.join('\n\n') + '\n\nThis usually means a recent database migration hasn\'t been run yet.', 'Dashboard data incomplete');
+    }
+  }
+
+  /* ---------------- Period math for the Delivery Count KPI ---------------- */
+  function periodRange(granularity, offset) {
+    // offset 0 = current period, -1 = previous period
+    const now = new Date();
+    let start, end, label;
+    if (granularity === 'day') {
+      const d = new Date(now); d.setDate(d.getDate() + offset);
+      start = end = d; label = 'vs yesterday';
+    } else if (granularity === 'week') {
+      const d = new Date(now);
+      const dayOfWeek = (d.getDay() + 6) % 7; // Monday = 0
+      d.setDate(d.getDate() - dayOfWeek + offset * 7);
+      start = new Date(d);
+      end = new Date(d); end.setDate(end.getDate() + 6);
+      label = 'vs last week';
+    } else if (granularity === 'year') {
+      start = new Date(now.getFullYear() + offset, 0, 1);
+      end = new Date(now.getFullYear() + offset, 11, 31);
+      label = 'vs last year';
+    } else { // month
+      start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+      label = 'vs last month';
+    }
+    return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10), label };
+  }
+
+  function computeKPIs() {
+    const granularity = document.getElementById('kpiGranularity').value;
+    const current = periodRange(granularity, 0);
+    const previous = periodRange(granularity, -1);
+
+    const inRange = (d, r) => d.date >= r.from && d.date <= r.to;
+    const customerDeliveries = deliveries.filter(d => d.delivery_type === 'Customer Delivery');
+    const currentCount = customerDeliveries.filter(d => inRange(d, current)).length;
+    const previousCount = customerDeliveries.filter(d => inRange(d, previous)).length;
+    const pct = previousCount === 0 ? (currentCount > 0 ? 100 : 0) : Math.round(((currentCount - previousCount) / previousCount) * 100);
+
+    document.getElementById('kpiDeliveries').textContent = currentCount;
+    const deltaEl = document.getElementById('kpiDeliveriesDelta');
+    deltaEl.textContent = (pct >= 0 ? '▲ +' : '▼ ') + pct + '%';
+    deltaEl.className = pct >= 0 ? 'kpi-delta-up' : 'kpi-delta-down';
+    document.getElementById('kpiDeliveriesDeltaLabel').textContent = current.label;
+
+    document.getElementById('kpiReceived').textContent = stock.length;
+    const withStatus = deliveries.map(d => ({ ...d, status: StatusRules.deliveryStatus(d, receivings) }));
+    document.getElementById('kpiPending').textContent = withStatus.filter(d => d.status === 'Open').length;
+  }
+
+  /* ---------------- Donut: delivery qty by customer ---------------- */
+  function renderDonut() {
+    const from = document.getElementById('filterFrom').value;
+    const to = document.getElementById('filterTo').value;
+    const sortBy = document.getElementById('sortSelect').value;
+    const customerFilter = document.getElementById('filterCustomer').value;
+
+    let filtered = deliveries.filter(d => d.delivery_type === 'Customer Delivery' && d.date >= from && d.date <= to);
+    if (customerFilter) filtered = filtered.filter(d => d.customers && d.customers.name === customerFilter);
+
+    const byCustomer = {};
+    filtered.forEach(d => {
+      const name = d.customers ? d.customers.name : 'Unknown';
+      byCustomer[name] = (byCustomer[name] || 0) + d.qty;
+    });
+
+    let entries = Object.entries(byCustomer);
+    entries = sortBy === 'name' ? entries.sort((a, b) => a[0].localeCompare(b[0])) : entries.sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+
+    if (donutChart) donutChart.destroy();
+    donutChart = new Chart(document.getElementById('donutChart'), {
+      type: 'doughnut',
+      data: { labels: entries.map(([k]) => k), datasets: [{ data: entries.map(([, v]) => v), backgroundColor: COLORS, borderWidth: 2, borderColor: '#fff' }] },
+      options: { plugins: { legend: { display: false } }, cutout: '65%' }
+    });
+
+    document.getElementById('donutLegend').innerHTML = entries.map(([name, val], i) => {
+      const pct = total ? Math.round((val / total) * 100) : 0;
+      return `<div class="legend-item"><span class="legend-dot" style="background:${COLORS[i % COLORS.length]}"></span><span class="legend-name">${name}</span><span class="legend-value">${val} pcs · ${pct}%</span></div>`;
+    }).join('') || '<div class="muted">No deliveries in this period.</div>';
+
+    document.getElementById('activeFilterLabel').textContent = `Showing: ${from} to ${to} · ${customerFilter || 'All Customers'}`;
+  }
+
+  /* ---------------- Bar: actual stock by tire size + pattern ---------------- */
+  function renderStockBar() {
+    const to = document.getElementById('filterTo').value;
+    const filtered = stock.filter(s => s.active && s.whs !== 'CST-WHS' && (!s.receive_date || s.receive_date <= to));
+    const byType = {};
+    filtered.forEach(s => { const key = `${s.tire_size} / ${s.pattern}`; byType[key] = (byType[key] || 0) + 1; });
+
+    if (stockChart) stockChart.destroy();
+    const maxVal = Math.max(10, ...Object.values(byType));
+    stockChart = new Chart(document.getElementById('stockChart'), {
+      type: 'bar',
+      data: { labels: Object.keys(byType), datasets: [{ label: 'Qty in stock', data: Object.values(byType), backgroundColor: '#0F2A47', borderRadius: 4, maxBarThickness: 34 }] },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, suggestedMax: Math.ceil(maxVal / 10) * 10, ticks: { stepSize: 10, precision: 0 }, title: { display: true, text: 'Quantity' } },
+          x: { title: { display: true, text: 'Tire Size / Pattern' } }
+        }
+      }
+    });
+  }
+
+  function applyFilters() { renderDonut(); renderStockBar(); }
+
+  loadData();
+</script>
+</body>
+</html>

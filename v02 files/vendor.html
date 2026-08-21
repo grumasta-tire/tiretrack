@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Vendor</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body data-page="vendor">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Vendor</h1>
+      <div class="subtitle">Manage tire vendors and suppliers.</div>
+    </div>
+
+    <div class="card">
+      <h2 id="formTitle">Add New</h2>
+      <div class="form-grid"><div><label>Vendor Name</label><input type="text" id="mf_name"></div><div><label>Contact</label><input type="text" id="mf_contact"></div><div><label>Address</label><input type="text" id="mf_address"></div></div>
+      <div class="form-actions">
+        <button class="btn-primary" id="submitBtn" onclick="submitForm()">Save</button>
+        <button class="btn-secondary" id="cancelBtn" onclick="resetForm()" style="display:none;">Cancel Edit</button>
+      </div>
+      <div id="statusMsg" style="display:none; margin-top:12px; padding:9px 12px; border-radius:6px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Records</h2>
+      <div id="recordBrowserMount"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Vendor Name</th><th>Contact</th><th>Address</th><th>Actions</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="record-browser.js"></script>
+<script src="ui-utils.js"></script>
+<script>
+  AppShell.init();
+
+  const TABLE = 'vendors';
+  const COLS = ['name','contact','address'];
+  let records = [];
+  let editingId = null;
+  let browser;
+
+  let visibleRecords = [];
+  let currentQuery = '';
+
+  async function loadRecords() {
+    records = await MasterDB.list(TABLE);
+    applyFilter();
+  }
+
+  function applyFilter() {
+    visibleRecords = currentQuery
+      ? records.filter(r => COLS.some(c => String(r[c] || '').toLowerCase().includes(currentQuery)))
+      : records;
+    render();
+    if (browser) browser.refresh();
+  }
+
+  function render() {
+    document.getElementById('tableBody').innerHTML = visibleRecords.map((r) => {
+      const cells = COLS.map(c => `<td>${r[c] ?? ''}</td>`).join('');
+      return `<tr>${cells}<td>
+        <button class="btn-edit" onclick="startEdit(${r.id})">Edit</button>
+        <button class="btn-view btn-sm" style="background:#FEE2E2;color:#DC2626;" onclick="deleteRecord(${r.id})">Delete</button>
+      </td></tr>`;
+    }).join('');
+  }
+
+  function collectForm() {
+    const data = {};
+    COLS.forEach(c => data[c] = document.getElementById('mf_' + c).value);
+    return data;
+  }
+
+  async function submitForm() {
+    const data = collectForm();
+    if (!validateRequired(COLS.map(c => ({ id: 'mf_' + c, label: c.charAt(0).toUpperCase() + c.slice(1).replace(/_/g, ' ') })))) return;
+    try {
+      if (editingId !== null) {
+        await MasterDB.update(TABLE, editingId, data);
+        showStatus('Record updated.', 'success');
+      } else {
+        await MasterDB.create(TABLE, data);
+        showStatus('Record added.', 'success');
+      }
+      resetForm();
+      await loadRecords();
+    } catch (err) {
+      showErrorDialog(err.message);
+    }
+  }
+
+  function startEdit(id) {
+    const r = records.find(r => r.id === id);
+    editingId = id;
+    COLS.forEach(c => document.getElementById('mf_' + c).value = r[c] || '');
+    document.getElementById('formTitle').textContent = 'Edit Record';
+    document.getElementById('submitBtn').textContent = 'Update';
+    document.getElementById('cancelBtn').style.display = 'inline-block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function resetForm() {
+    editingId = null;
+    COLS.forEach(c => document.getElementById('mf_' + c).value = '');
+    document.getElementById('formTitle').textContent = 'Add New';
+    document.getElementById('submitBtn').textContent = 'Save';
+    document.getElementById('cancelBtn').style.display = 'none';
+  }
+
+  async function deleteRecord(id) {
+    if (!confirm('Delete this record?')) return;
+    try { await MasterDB.remove(TABLE, id); await loadRecords(); showStatus('Record deleted.', 'success'); }
+    catch (err) { showErrorDialog(err.message); }
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg; el.style.display = 'block';
+    el.style.background = type === 'success' ? '#DCFCE7' : '#FEE2E2';
+    el.style.color = type === 'success' ? '#166534' : '#DC2626';
+    setTimeout(() => el.style.display = 'none', 4000);
+  }
+
+  (async function start() {
+    await loadRecords();
+    browser = RecordBrowser.init({
+      mountId: 'recordBrowserMount',
+      getRecords: () => visibleRecords,
+      searchKeys: COLS,
+      onFilter: (q) => { currentQuery = q; applyFilter(); },
+      onShow: (r, i, total) => {
+        document.querySelectorAll('#tableBody tr').forEach(tr => tr.style.background = '');
+        if (r) {
+          const row = document.querySelectorAll('#tableBody tr')[i];
+          if (row) { row.style.background = '#FFF7ED'; row.scrollIntoView({ block: 'nearest' }); }
+        }
+      }
+    });
+  })();
+</script>
+</body>
+</html>

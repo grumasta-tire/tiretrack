@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Customer</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  .site-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .site-row input { flex: 1; }
+  .site-remove { background: var(--danger-bg); color: var(--danger); width: 30px; height: 30px; border-radius: 6px; flex-shrink: 0; }
+</style>
+</head>
+<body data-page="customer">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+  <main class="main">
+    <div class="page-head"><h1>Customer</h1><div class="subtitle">Manage customers, contacts, and their mining sites.</div></div>
+
+    <div class="card">
+      <h2 id="formTitle">Add New Customer</h2>
+      <div class="form-grid">
+        <div><label>Customer Name</label><input type="text" id="mf_name"></div>
+        <div><label>Address</label><input type="text" id="mf_address"></div>
+        <div><label>PIC (Person in Charge)</label><input type="text" id="mf_pic"></div>
+        <div><label>Contact</label><input type="text" id="mf_contact" placeholder="Phone / email"></div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <label>Sites</label>
+        <div id="sitesWrap"></div>
+        <button class="btn-secondary btn-sm" onclick="addSiteRow()">+ Add Site</button>
+      </div>
+
+      <div class="form-actions" style="margin-top:16px;">
+        <button class="btn-primary" id="submitBtn" onclick="submitForm()">Save</button>
+        <button class="btn-secondary" id="cancelBtn" onclick="resetForm()" style="display:none;">Cancel Edit</button>
+      </div>
+      <div id="statusMsg" style="display:none; margin-top:12px; padding:9px 12px; border-radius:6px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Records <span class="badge badge-count" id="rowCount">0</span></h2>
+      <div id="recordBrowserMount"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Customer Name</th><th>Address</th><th>PIC</th><th>Contact</th><th>Sites</th><th>Actions</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="record-browser.js"></script>
+<script src="ui-utils.js"></script>
+<script>
+  AppShell.init();
+
+  let records = [];
+  let visibleRecords = [];
+  let currentQuery = '';
+  let editingId = null;
+  let editingSiteRows = []; // [{id?, site_name}] while editing an existing customer
+  let browser;
+
+  async function loadRecords() {
+    records = await CustomerDB.list();
+    applyFilter();
+  }
+
+  function applyFilter() {
+    visibleRecords = currentQuery
+      ? records.filter(c => c.name.toLowerCase().includes(currentQuery) || (c.customer_sites || []).some(s => s.site_name.toLowerCase().includes(currentQuery)))
+      : records;
+    render();
+    if (browser) browser.refresh();
+  }
+
+  function render() {
+    document.getElementById('rowCount').textContent = visibleRecords.length;
+    document.getElementById('tableBody').innerHTML = visibleRecords.map(c => `
+      <tr>
+        <td>${c.name}</td><td>${c.address || ''}</td><td>${c.pic || ''}</td><td>${c.contact || ''}</td>
+        <td>${(c.customer_sites || []).map(s => s.site_name).join(', ') || '<span class="muted">No sites</span>'}</td>
+        <td>
+          <button class="btn-edit" onclick="startEdit(${c.id})">Edit</button>
+          <button class="btn-view btn-sm" style="background:#FEE2E2;color:#DC2626;" onclick="deleteRecord(${c.id})">Delete</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  function addSiteRow(site) {
+    const id = site && site.id ? site.id : null;
+    const row = document.createElement('div');
+    row.className = 'site-row';
+    row.dataset.siteId = id || '';
+    row.innerHTML = `<input type="text" placeholder="Site name (e.g. Sangatta Site)" value="${site ? site.site_name : ''}">
+      <button class="site-remove" onclick="removeSiteRow(this, ${id})">×</button>`;
+    document.getElementById('sitesWrap').appendChild(row);
+  }
+
+  async function removeSiteRow(btn, siteId) {
+    if (siteId) {
+      if (!confirm('Remove this site? This cannot be undone.')) return;
+      try { await CustomerDB.removeSite(siteId); } catch (err) { showErrorDialog(err.message, 'Could not remove site'); return; }
+    }
+    btn.parentElement.remove();
+  }
+
+  function collectSites() {
+    return [...document.querySelectorAll('.site-row')].map(row => ({
+      id: row.dataset.siteId ? parseInt(row.dataset.siteId) : null,
+      site_name: row.querySelector('input').value
+    })).filter(s => s.site_name.trim());
+  }
+
+  async function submitForm() {
+    const name = document.getElementById('mf_name').value;
+    const address = document.getElementById('mf_address').value;
+    const pic = document.getElementById('mf_pic').value;
+    const contact = document.getElementById('mf_contact').value;
+    if (!validateRequired([
+      { id: 'mf_name', label: 'Customer Name' }, { id: 'mf_address', label: 'Address' },
+      { id: 'mf_pic', label: 'PIC' }, { id: 'mf_contact', label: 'Contact' }
+    ])) return;
+
+    const sites = collectSites();
+    if (sites.length === 0) { showErrorDialog('Add at least one site before saving.'); return; }
+    try {
+      if (editingId !== null) {
+        await CustomerDB.update(editingId, { name, address, pic, contact }, sites);
+        showStatus('Customer updated.', 'success');
+      } else {
+        await CustomerDB.create({ name, address, pic, contact }, sites.map(s => s.site_name));
+        showStatus('Customer added.', 'success');
+      }
+      resetForm();
+      await loadRecords();
+    } catch (err) {
+      showErrorDialog(err.message);
+    }
+  }
+
+  function startEdit(id) {
+    const c = records.find(c => c.id === id);
+    editingId = id;
+    document.getElementById('mf_name').value = c.name || '';
+    document.getElementById('mf_address').value = c.address || '';
+    document.getElementById('mf_pic').value = c.pic || '';
+    document.getElementById('mf_contact').value = c.contact || '';
+    document.getElementById('sitesWrap').innerHTML = '';
+    (c.customer_sites || []).forEach(s => addSiteRow(s));
+    document.getElementById('formTitle').textContent = 'Edit Customer';
+    document.getElementById('submitBtn').textContent = 'Update';
+    document.getElementById('cancelBtn').style.display = 'inline-block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function resetForm() {
+    editingId = null;
+    ['mf_name','mf_address','mf_pic','mf_contact'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('sitesWrap').innerHTML = '';
+    document.getElementById('formTitle').textContent = 'Add New Customer';
+    document.getElementById('submitBtn').textContent = 'Save';
+    document.getElementById('cancelBtn').style.display = 'none';
+  }
+
+  async function deleteRecord(id) {
+    if (!confirm('Delete this customer? This also deletes all of their sites, and may fail if deliveries/returns already reference them.')) return;
+    try { await CustomerDB.remove(id); await loadRecords(); showStatus('Customer deleted.', 'success'); }
+    catch (err) { showErrorDialog(err.message); }
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg; el.style.display = 'block';
+    el.style.background = type === 'success' ? '#DCFCE7' : '#FEE2E2';
+    el.style.color = type === 'success' ? '#166534' : '#DC2626';
+    setTimeout(() => el.style.display = 'none', 4000);
+  }
+
+  (async function start() {
+    await loadRecords();
+    browser = RecordBrowser.init({
+      mountId: 'recordBrowserMount',
+      getRecords: () => visibleRecords,
+      searchKeys: ['name'],
+      onFilter: (q) => { currentQuery = q; applyFilter(); },
+      onShow: (r, i) => {
+        document.querySelectorAll('#tableBody tr').forEach(tr => tr.style.background = '');
+        if (r) {
+          const row = document.querySelectorAll('#tableBody tr')[i];
+          if (row) { row.style.background = '#FFF7ED'; row.scrollIntoView({ block: 'nearest' }); }
+        }
+      }
+    });
+  })();
+</script>
+</body>
+</html>

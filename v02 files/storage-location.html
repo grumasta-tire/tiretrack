@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Storage Location</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body data-page="storage-location">
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+  <main class="main">
+    <div class="page-head"><h1>Storage Location</h1><div class="subtitle">Stock on hand per warehouse.</div></div>
+    <div class="card">
+      <h2>Warehouses <span class="badge badge-count" id="rowCount">0</span></h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Warehouse Name</th><th>Address</th><th>Stock on Hand (pcs)</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script>
+  AppShell.init();
+  (async function () {
+    const warehouses = await RefDB.warehouses();
+    const stock = await InventoryDB.list();
+    document.getElementById('rowCount').textContent = warehouses.length;
+    document.getElementById('tableBody').innerHTML = warehouses.map(w => {
+      const count = stock.filter(s => s.active && s.whs === w.code).length;
+      return `<tr><td class="mono">${w.code}</td><td>${w.name}</td><td>${w.address||''}</td><td>${count}</td></tr>`;
+    }).join('');
+  })();
+</script>
+</body>
+</html>

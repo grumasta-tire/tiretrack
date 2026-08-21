@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Master Tire</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--navy); }
+  th.sortable .arrow { margin-left: 4px; opacity: 0.5; }
+  th.sortable.active .arrow { opacity: 1; color: var(--amber); }
+</style>
+</head>
+<body data-page="master-tire">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+  <main class="main">
+    <div class="page-head"><h1>Master Tire</h1><div class="subtitle">Manage the catalog of tire brands, sizes, and patterns.</div></div>
+
+    <div class="card">
+      <h2 id="formTitle">Add New</h2>
+      <div class="form-grid">
+        <div><label>Brand</label><input type="text" id="mf_brand"></div>
+        <div><label>Tire Size</label><input type="text" id="mf_tire_size"></div>
+        <div><label>Pattern</label><input type="text" id="mf_pattern"></div>
+        <div><label>Compound</label><input type="text" id="mf_compound"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" id="submitBtn" onclick="submitForm()">Save</button>
+        <button class="btn-secondary" id="cancelBtn" onclick="resetForm()" style="display:none;">Cancel Edit</button>
+      </div>
+      <div id="statusMsg" style="display:none; margin-top:12px; padding:9px 12px; border-radius:6px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Records <span class="badge badge-count" id="rowCount">0</span></h2>
+      <div id="recordBrowserMount"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" data-col="brand">Brand <span class="arrow">▲▼</span></th>
+              <th class="sortable" data-col="tire_size">Tire Size <span class="arrow">▲▼</span></th>
+              <th class="sortable" data-col="pattern">Pattern <span class="arrow">▲▼</span></th>
+              <th class="sortable" data-col="compound">Compound <span class="arrow">▲▼</span></th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="record-browser.js"></script>
+<script src="ui-utils.js"></script>
+<script>
+  AppShell.init();
+
+  const TABLE = 'tire_catalog';
+  const COLS = ['brand', 'tire_size', 'pattern', 'compound'];
+  let records = [];
+  let visibleRecords = [];  // after search filter + sort
+  let editingId = null;
+  let browser;
+  let sortCol = null, sortDir = 1;
+  let currentQuery = '';
+
+  async function loadRecords() {
+    records = await MasterDB.list(TABLE);
+    applyFilterAndSort();
+  }
+
+  function applyFilterAndSort() {
+    let rows = records;
+    if (currentQuery) {
+      rows = rows.filter(r => COLS.some(c => String(r[c] || '').toLowerCase().includes(currentQuery)));
+    }
+    if (sortCol) {
+      rows = [...rows].sort((a, b) => {
+        const av = String(a[sortCol] || '').toLowerCase(), bv = String(b[sortCol] || '').toLowerCase();
+        return av < bv ? -sortDir : av > bv ? sortDir : 0;
+      });
+    }
+    visibleRecords = rows;
+    render();
+    if (browser) browser.refresh();
+  }
+
+  function render() {
+    document.getElementById('rowCount').textContent = visibleRecords.length;
+    document.getElementById('tableBody').innerHTML = visibleRecords.map(r => {
+      const cells = COLS.map(c => `<td>${r[c] ?? ''}</td>`).join('');
+      return `<tr>${cells}<td>
+        <button class="btn-edit" onclick="startEdit(${r.id})">Edit</button>
+        <button class="btn-view btn-sm" style="background:#FEE2E2;color:#DC2626;" onclick="deleteRecord(${r.id})">Delete</button>
+      </td></tr>`;
+    }).join('');
+  }
+
+  document.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = 1; }
+      document.querySelectorAll('th.sortable').forEach(t => t.classList.remove('active'));
+      th.classList.add('active');
+      applyFilterAndSort();
+    });
+  });
+
+  function collectForm() {
+    const data = {};
+    COLS.forEach(c => data[c] = document.getElementById('mf_' + c).value);
+    return data;
+  }
+
+  async function submitForm() {
+    const data = collectForm();
+    if (!validateRequired([
+      { id: 'mf_brand', label: 'Brand' }, { id: 'mf_tire_size', label: 'Tire Size' },
+      { id: 'mf_pattern', label: 'Pattern' }, { id: 'mf_compound', label: 'Compound' }
+    ])) return;
+    try {
+      if (editingId !== null) { await MasterDB.update(TABLE, editingId, data); showStatus('Record updated.', 'success'); }
+      else { await MasterDB.create(TABLE, data); showStatus('Record added.', 'success'); }
+      resetForm();
+      await loadRecords();
+    } catch (err) { showErrorDialog(err.message); }
+  }
+
+  function startEdit(id) {
+    const r = records.find(r => r.id === id);
+    editingId = id;
+    COLS.forEach(c => document.getElementById('mf_' + c).value = r[c] || '');
+    document.getElementById('formTitle').textContent = 'Edit Record';
+    document.getElementById('submitBtn').textContent = 'Update';
+    document.getElementById('cancelBtn').style.display = 'inline-block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function resetForm() {
+    editingId = null;
+    COLS.forEach(c => document.getElementById('mf_' + c).value = '');
+    document.getElementById('formTitle').textContent = 'Add New';
+    document.getElementById('submitBtn').textContent = 'Save';
+    document.getElementById('cancelBtn').style.display = 'none';
+  }
+
+  async function deleteRecord(id) {
+    if (!confirm('Delete this record?')) return;
+    try { await MasterDB.remove(TABLE, id); await loadRecords(); showStatus('Record deleted.', 'success'); }
+    catch (err) { showErrorDialog(err.message); }
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg; el.style.display = 'block';
+    el.style.background = type === 'success' ? '#DCFCE7' : '#FEE2E2';
+    el.style.color = type === 'success' ? '#166534' : '#DC2626';
+    setTimeout(() => el.style.display = 'none', 4000);
+  }
+
+  (async function start() {
+    await loadRecords();
+    browser = RecordBrowser.init({
+      mountId: 'recordBrowserMount',
+      getRecords: () => visibleRecords,
+      searchKeys: COLS,
+      onFilter: (q) => { currentQuery = q; applyFilterAndSort(); },
+      onShow: (r, i) => {
+        document.querySelectorAll('#tableBody tr').forEach(tr => tr.style.background = '');
+        if (r) {
+          const row = document.querySelectorAll('#tableBody tr')[i];
+          if (row) { row.style.background = '#FFF7ED'; row.scrollIntoView({ block: 'nearest' }); }
+        }
+      }
+    });
+  })();
+</script>
+</body>
+</html>

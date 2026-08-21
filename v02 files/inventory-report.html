@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Inventory Report</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="export-utils.js"></script>
+</head>
+<body data-page="inventory-report">
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+  <main class="main">
+    <div class="page-head"><h1>Inventory Report</h1><div class="subtitle">Every tire currently tracked, listed individually by S/N.</div></div>
+    <div class="filter-bar">
+      <div class="filter-field"><label>Item Status</label>
+        <select id="fStatus"><option value="">All</option><option>Available</option><option>Delivered</option><option>Return</option></select>
+      </div>
+      <div class="filter-field"><label>Tire Size</label><select id="fSize"><option value="">All</option></select></div>
+      <div class="filter-field"><button class="btn-primary btn-sm" onclick="applyFilters()">Apply</button></div>
+      <div class="filter-field filter-field-right"><button class="btn-accent btn-sm" onclick="exportTableToExcel('reportTable', 'Inventory_Report.xlsx')">Export to Excel</button></div>
+    </div>
+    <div class="card">
+      <h2>Inventory Detail <span class="badge badge-count" id="rowCount">0</span></h2>
+      <div class="table-wrap">
+        <table id="reportTable">
+          <thead><tr><th>S/N</th><th>Brand</th><th>Tire Size</th><th>Pattern</th><th>Compound</th><th>Warehouse</th><th>Item Status</th><th>Customer</th><th>Receive Date</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script>
+  AppShell.init();
+  let stock = [];
+  let snToCustomer = {};
+
+  function applyFilters() {
+    const status = document.getElementById('fStatus').value;
+    const size = document.getElementById('fSize').value;
+
+    let rows = stock.filter(s => s.active);
+    if (status) rows = rows.filter(s => s.item_status === status);
+    if (size) rows = rows.filter(s => s.tire_size === size);
+
+    document.getElementById('rowCount').textContent = rows.length;
+    document.getElementById('tableBody').innerHTML = rows.map(s => `
+      <tr><td class="mono">${s.sn}</td><td>${s.brand||''}</td><td>${s.tire_size||''}</td><td>${s.pattern||''}</td><td>${s.compound||''}</td>
+      <td class="mono">${s.whs}</td><td>${s.item_status}</td><td>${s.item_status === 'Delivered' ? (snToCustomer[s.sn] || '') : ''}</td>
+      <td>${s.receive_date||''}</td></tr>`).join('');
+  }
+
+  (async function () {
+    stock = await InventoryDB.list();
+    const deliveries = await DeliveryDB.list();
+    deliveries.forEach(d => {
+      if (d.delivery_type === 'Customer Delivery' && d.customers) {
+        (d.delivery_items || []).forEach(it => { snToCustomer[it.sn] = d.customers.name; });
+      }
+    });
+
+    const sizes = [...new Set(stock.map(s => s.tire_size).filter(Boolean))].sort();
+    document.getElementById('fSize').innerHTML = '<option value="">All</option>' + sizes.map(s => `<option value="${s}">${s}</option>`).join('');
+
+    applyFilters();
+  })();
+</script>
+</body>
+</html>

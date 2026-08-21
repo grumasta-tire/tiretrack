@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Delivery Performance</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="export-utils.js"></script>
+</head>
+<body data-page="delivery-performance">
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+  <main class="main">
+    <div class="page-head"><h1>Delivery Performance</h1><div class="subtitle">Closure rate of delivery notes by customer.</div></div>
+    <div class="filter-bar">
+      <div class="filter-field"><label>From</label><input type="date" id="fFrom" value="2026-01-01"></div>
+      <div class="filter-field"><label>To</label><input type="date" id="fTo" value="2026-12-31"></div>
+      <div class="filter-field"><button class="btn-primary btn-sm" onclick="applyFilters()">Apply</button></div>
+      <div class="filter-field filter-field-right"><button class="btn-accent btn-sm" onclick="exportTableToExcel('reportTable', 'Delivery_Performance.xlsx')">Export to Excel</button></div>
+    </div>
+    <div class="card">
+      <h2>Performance by Customer <span class="badge badge-count" id="rowCount">0</span></h2>
+      <div class="table-wrap">
+        <table id="reportTable">
+          <thead><tr><th>Customer</th><th>Total Deliveries</th><th>Closed</th><th>Open</th><th>Closure Rate</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="status-rules.js"></script>
+<script>
+  AppShell.init();
+  let deliveries = [], receivings = [];
+
+  function applyFilters() {
+    const from = document.getElementById('fFrom').value;
+    const to = document.getElementById('fTo').value;
+    const byCustomer = {};
+    deliveries.filter(d => d.delivery_type === 'Customer Delivery' && d.date >= from && d.date <= to).forEach(d => {
+      const status = StatusRules.deliveryStatus(d, receivings);
+      const name = d.customers ? d.customers.name : 'Unknown';
+      byCustomer[name] = byCustomer[name] || { total: 0, closed: 0 };
+      byCustomer[name].total++;
+      if (status === 'Closed') byCustomer[name].closed++;
+    });
+    const rows = Object.entries(byCustomer);
+    document.getElementById('rowCount').textContent = rows.length;
+    document.getElementById('tableBody').innerHTML = rows.map(([name, v]) => {
+      const open = v.total - v.closed;
+      const rate = Math.round((v.closed / v.total) * 100);
+      return `<tr><td>${name}</td><td>${v.total}</td><td>${v.closed}</td><td>${open}</td><td>${rate}%</td></tr>`;
+    }).join('');
+  }
+
+  (async function () {
+    deliveries = await DeliveryDB.list();
+    receivings = await ReceivingDB.list();
+    applyFilters();
+  })();
+</script>
+</body>
+</html>

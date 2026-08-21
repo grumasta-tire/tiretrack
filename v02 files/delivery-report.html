@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Delivery Report</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="export-utils.js"></script>
+</head>
+<body data-page="delivery-report">
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+  <main class="main">
+    <div class="page-head"><h1>Delivery Report</h1><div class="subtitle">Every tire shipped, listed individually by S/N so it can be analyzed in Excel.</div></div>
+    <div class="filter-bar">
+      <div class="filter-field"><label>From</label><input type="date" id="fFrom" value="2026-01-01"></div>
+      <div class="filter-field"><label>To</label><input type="date" id="fTo" value="2026-12-31"></div>
+      <div class="filter-field"><label>Customer</label>
+        <input list="customerList" id="fCustomer" placeholder="All customers">
+        <datalist id="customerList"></datalist>
+      </div>
+      <div class="filter-field"><button class="btn-primary btn-sm" onclick="applyFilters()">Apply</button></div>
+      <div class="filter-field filter-field-right"><button class="btn-accent btn-sm" onclick="exportTableToExcel('reportTable', 'Delivery_Report.xlsx')">Export to Excel</button></div>
+    </div>
+    <div class="card">
+      <h2>Delivery Detail <span class="badge badge-count" id="rowCount">0</span></h2>
+      <div class="table-wrap">
+        <table id="reportTable">
+          <thead><tr><th>Delivery No.</th><th>S/N</th><th>Brand</th><th>Tire Size</th><th>Pattern</th><th>Date</th><th>Type</th><th>Route</th><th>Driver</th><th>Driver Phone</th><th>Plate No.</th><th>Status</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="status-rules.js"></script>
+<script>
+  AppShell.init();
+  let deliveries = [], receivings = [];
+
+  function routeLabel(d) {
+    return d.delivery_type === 'Warehouse Transfer' ? `${d.from_whs} -> ${d.to_whs}` : `${d.from_whs} -> ${d.customers?.name||''} (${d.customer_sites?.site_name||''})`;
+  }
+
+  function applyFilters() {
+    const from = document.getElementById('fFrom').value;
+    const to = document.getElementById('fTo').value;
+    const customer = document.getElementById('fCustomer').value.trim().toLowerCase();
+
+    let rows = [];
+    deliveries.forEach(d => {
+      if (from && d.date < from) return;
+      if (to && d.date > to) return;
+      if (customer && !(d.customers && d.customers.name.toLowerCase().includes(customer))) return;
+      const status = StatusRules.deliveryStatus(d, receivings);
+      (d.delivery_items || []).forEach(it => {
+        rows.push({ d, it, status });
+      });
+    });
+
+    document.getElementById('rowCount').textContent = rows.length;
+    document.getElementById('tableBody').innerHTML = rows.map(({ d, it, status }) => `
+      <tr><td class="mono">${d.note_no}</td><td class="mono">${it.sn}</td>
+      <td>${it.tire_inventory?.brand||''}</td><td>${it.tire_inventory?.tire_size||''}</td><td>${it.tire_inventory?.pattern||''}</td>
+      <td>${d.date}</td><td>${d.delivery_type}</td><td>${routeLabel(d)}</td>
+      <td>${d.driver_name||''}</td><td>${d.driver_phone||''}</td><td class="mono">${d.plate_no||''}</td>
+      <td><span class="badge ${status==='Open'?'badge-open':'badge-closed'}">${status.toUpperCase()}</span></td></tr>`).join('');
+  }
+
+  (async function () {
+    deliveries = await DeliveryDB.list();
+    receivings = await ReceivingDB.list();
+    const customers = await RefDB.customers();
+    document.getElementById('customerList').innerHTML = customers.map(c => `<option value="${c.name}">`).join('');
+    applyFilters();
+  })();
+</script>
+</body>
+</html>

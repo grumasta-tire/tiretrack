@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Goods Receiving</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+  .item-row { display: grid; grid-template-columns: 40px 1.2fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .item-row .row-no { color: var(--muted); font-size: 12.5px; text-align: center; }
+  .items-head { display: grid; grid-template-columns: 40px 1.2fr 1fr 1fr 1fr; gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+  /* html2canvas cannot render a transparent or behind-the-page print area.
+     It is shown above the page only while the PDF canvas is being captured. */
+  #printArea { position: fixed; top: 0; left: 0; width: 794px; visibility: hidden; pointer-events: none; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; padding: 36px 40px; }
+  #printArea.pdf-rendering { visibility: visible; z-index: 2147483647; }
+  #printArea .dn-header { border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
+  #printArea .dn-co { font-weight: bold; font-size: 13px; }
+  #printArea .dn-meta { font-size: 11px; margin-bottom: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 20px; }
+  #printArea .dn-meta div { display: flex; }
+  #printArea .dn-meta span.k { width: 130px; color: #333; }
+  #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 16px; margin: 10px 0 16px; }
+  #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-bottom: 18px; }
+  #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 5px 6px; text-align: left; }
+  #printArea table.dn-table th { background: #f0f0f0; text-align: center; }
+  #printArea .dn-sign { display: flex; justify-content: space-between; font-size: 11px; margin-top: 40px; }
+  #printArea .dn-sign .col { width: 45%; }
+  #printArea .dn-sign .line { margin-top: 55px; border-top: 1px solid #333; padding-top: 4px; }
+</style>
+</head>
+<body data-page="goods-receiving">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Goods Receiving</h1>
+      <div class="subtitle">Record tires arriving into a warehouse.</div>
+    </div>
+
+    <div class="placeholder-note">Entries here cannot be edited or deleted once saved. Status is set automatically to <strong>Closed</strong> — recording a receipt is the confirmation that it physically arrived.</div>
+
+    <div class="card">
+      <h2>New Receiving Entry</h2>
+      <div class="form-grid">
+        <div><label>Receiving No.</label><input type="text" id="f_no" placeholder="e.g. GR-2026-0088"></div>
+        <div><label>Posting Date</label><input type="date" id="f_posting_date"></div>
+        <div><label>Delivery Date <span style="text-transform:none; font-weight:400;">(on vendor's/transfer's note)</span></label><input type="date" id="f_delivery_date"></div>
+        <div><label>Receiving Date <span style="text-transform:none; font-weight:400;">(physically arrived)</span></label><input type="date" id="f_receive_date"></div>
+        <div><label>Receiving Type</label>
+          <select id="f_type" onchange="toggleSourceField()">
+            <option value="Vendor">Vendor</option>
+            <option value="Warehouse Transfer">Warehouse Transfer</option>
+          </select>
+        </div>
+        <div id="sourceVendorWrap"><label>Vendor</label>
+          <select id="f_vendor"></select>
+        </div>
+        <div id="sourceWhsWrap" style="display:none;"><label>From Warehouse</label>
+          <select id="f_from_whs"></select>
+        </div>
+        <div><label>To Warehouse</label><select id="f_to_whs"></select></div>
+        <div><label>Driver Name</label><input type="text" id="f_driver_name" placeholder="Driver's full name"></div>
+        <div><label>Driver Phone</label><input type="text" id="f_driver_phone" placeholder="e.g. 0812xxxxxxx"></div>
+        <div><label>Vehicle Plate Number</label><input type="text" id="f_plate" placeholder="e.g. B 9021 TIR"></div>
+        <div><label>Total S/N in this batch</label><input type="number" id="f_qty" min="1" placeholder="e.g. 12"></div>
+        <div><label>Received By</label><input type="text" id="f_received_by" placeholder="Warehouse staff name"></div>
+        <div><label>Source Document <span style="text-transform:none; font-weight:400;">(optional)</span></label>
+          <input type="file" id="f_doc" accept="image/*,.pdf">
+        </div>
+        <div style="align-self:end;"><button class="btn-secondary" onclick="generateItemRows()">Generate Item Rows</button></div>
+      </div>
+      <div style="margin-top:14px;">
+        <label>Remarks <span style="text-transform:none; font-weight:400;">(optional)</span></label>
+        <textarea id="f_remarks" rows="2" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; font-family:inherit; resize:vertical;"></textarea>
+      </div>
+      <div class="placeholder-note" style="margin-top:14px;">The source document is optional and for record-keeping only — it does not affect the Closed status.</div>
+    </div>
+
+    <div class="card" id="itemsCard" style="display:none;">
+      <h2>Items (<span id="itemsExpected">0</span> S/N expected)</h2>
+      <div class="items-head"><div>#</div><div>Serial Number</div><div>Tire Size</div><div>Pattern</div><div>Compound</div></div>
+      <div id="itemsWrap"></div>
+      <datalist id="tireSizeList"></datalist>
+    </div>
+
+    <div class="card">
+      <div class="form-actions"><button class="btn-primary" onclick="saveReceiving()">Save Receiving Entry</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Receiving History</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Receiving No.</th><th>Posting</th><th>Delivery</th><th>Received</th><th>Type</th><th>Source</th><th>To WHS</th><th>Driver</th><th>Plate No.</th><th>Received By</th><th>Total S/N</th><th>Items</th><th>Doc</th><th>Status</th><th></th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="itemsModal" style="display:none; position:fixed; inset:0; background:rgba(15,42,71,0.45); z-index:50; align-items:center; justify-content:center;">
+  <div class="card" style="width:480px; max-height:70vh; overflow-y:auto; margin:0;">
+    <h2 id="itemsModalTitle">Items</h2>
+    <div class="table-wrap" style="max-height:400px;">
+      <table><thead><tr><th>S/N</th><th>Tire Size</th><th>Pattern</th><th>Compound</th></tr></thead><tbody id="itemsModalBody"></tbody></table>
+    </div>
+    <div class="form-actions" style="margin-top:14px;"><button class="btn-secondary" onclick="document.getElementById('itemsModal').style.display='none';">Close</button></div>
+  </div>
+</div>
+
+<div id="printArea"></div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="status-rules.js"></script>
+<script src="ui-utils.js"></script>
+<script>
+  AppShell.init();
+
+  let receivings = [];
+  let vendors = [];
+  let warehouses = [];
+  let tireCatalog = [];
+  let stock = [];
+
+  async function loadRef() {
+    vendors = await RefDB.vendors();
+    warehouses = await RefDB.warehouses();
+    tireCatalog = await RefDB.tireCatalog();
+    document.getElementById('f_vendor').innerHTML = vendors.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+    const realWhs = warehouses.filter(w => w.code !== 'CST-WHS');
+    document.getElementById('f_from_whs').innerHTML = realWhs.map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
+    document.getElementById('f_to_whs').innerHTML = realWhs.map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
+    const sizes = [...new Set(tireCatalog.map(t => t.tire_size))];
+    document.getElementById('tireSizeList').innerHTML = sizes.map(s => `<option value="${s}">`).join('');
+  }
+
+  function toggleSourceField() {
+    const isTransfer = document.getElementById('f_type').value === 'Warehouse Transfer';
+    document.getElementById('sourceVendorWrap').style.display = isTransfer ? 'none' : 'block';
+    document.getElementById('sourceWhsWrap').style.display = isTransfer ? 'block' : 'none';
+  }
+
+  function generateItemRows() {
+    const qty = parseInt(document.getElementById('f_qty').value);
+    if (!qty || qty < 1) { showErrorDialog('Enter a valid "Total S/N in this batch" first (must be 1 or more).'); return; }
+    document.getElementById('itemsExpected').textContent = qty;
+    document.getElementById('itemsCard').style.display = 'block';
+    const wrap = document.getElementById('itemsWrap');
+    wrap.innerHTML = '';
+    for (let i = 1; i <= qty; i++) {
+      const rowId = 'item_' + i;
+      wrap.insertAdjacentHTML('beforeend', `
+        <div class="item-row" id="${rowId}">
+          <div class="row-no">${i}</div>
+          <input type="text" placeholder="Serial Number" data-col="sn" data-mono="true">
+          <input type="text" placeholder="Tire Size" data-col="tire_size" list="tireSizeList" onchange="onSizeChange('${rowId}')">
+          <select data-col="pattern" onchange="onPatternChange('${rowId}')"><option value="">Select pattern</option></select>
+          <select data-col="compound"><option value="">Select compound</option></select>
+        </div>`);
+    }
+  }
+
+  function patternsForSize(size) {
+    return [...new Set(tireCatalog.filter(t => t.tire_size === size).map(t => t.pattern).filter(Boolean))];
+  }
+  function compoundsForSizePattern(size, pattern) {
+    return [...new Set(tireCatalog.filter(t => t.tire_size === size && t.pattern === pattern).map(t => t.compound).filter(Boolean))];
+  }
+
+  function onSizeChange(rowId) {
+    const row = document.getElementById(rowId);
+    const size = row.querySelector('[data-col="tire_size"]').value.trim();
+    const patternSel = row.querySelector('[data-col="pattern"]');
+    const compoundSel = row.querySelector('[data-col="compound"]');
+    const patterns = patternsForSize(size);
+    patternSel.innerHTML = '<option value="">Select pattern</option>' + patterns.map(p => `<option value="${p}">${p}</option>`).join('') + '<option value="__other__">Other (type new)</option>';
+    compoundSel.innerHTML = '<option value="">Select compound</option><option value="__other__">Other (type new)</option>';
+  }
+
+  function onPatternChange(rowId) {
+    const row = document.getElementById(rowId);
+    const size = row.querySelector('[data-col="tire_size"]').value.trim();
+    const patternSel = row.querySelector('[data-col="pattern"]');
+    const compoundSel = row.querySelector('[data-col="compound"]');
+    if (patternSel.value === '__other__') {
+      const custom = prompt('Enter the new pattern name:');
+      if (custom) { patternSel.insertAdjacentHTML('afterbegin', `<option value="${custom}" selected>${custom}</option>`); }
+      else { patternSel.value = ''; }
+    }
+    const compounds = compoundsForSizePattern(size, patternSel.value);
+    compoundSel.innerHTML = '<option value="">Select compound</option>' + compounds.map(c => `<option value="${c}">${c}</option>`).join('') + '<option value="__other__">Other (type new)</option>';
+  }
+
+  document.addEventListener('change', e => {
+    if (e.target.dataset.col === 'compound' && e.target.value === '__other__') {
+      const custom = prompt('Enter the new compound name:');
+      if (custom) { e.target.insertAdjacentHTML('afterbegin', `<option value="${custom}" selected>${custom}</option>`); }
+      else { e.target.value = ''; }
+    }
+  });
+
+  function collectItems() {
+    return [...document.querySelectorAll('.item-row')].map(row => {
+      const obj = {};
+      row.querySelectorAll('input, select').forEach(inp => obj[inp.dataset.col] = (inp.value || '').trim());
+      return obj;
+    });
+  }
+
+  async function saveReceiving() {
+    const ok = validateRequired([
+      { id: 'f_no', label: 'Receiving No.' },
+      { id: 'f_posting_date', label: 'Posting Date' },
+      { id: 'f_receive_date', label: 'Receiving Date' },
+      { id: 'f_to_whs', label: 'To Warehouse' },
+      { id: 'f_driver_name', label: 'Driver Name' },
+      { id: 'f_plate', label: 'Vehicle Plate Number' },
+      { id: 'f_qty', label: 'Total S/N in this batch' },
+      { id: 'f_received_by', label: 'Received By' }
+    ]);
+    if (!ok) return;
+
+    const no = document.getElementById('f_no').value;
+    const posting_date = document.getElementById('f_posting_date').value;
+    const delivery_date = document.getElementById('f_delivery_date').value;
+    const receive_date = document.getElementById('f_receive_date').value;
+    const receiving_type = document.getElementById('f_type').value;
+    const vendor_id = receiving_type === 'Vendor' ? document.getElementById('f_vendor').value : null;
+    const from_whs = receiving_type === 'Warehouse Transfer' ? document.getElementById('f_from_whs').value : null;
+    const to_whs = document.getElementById('f_to_whs').value;
+    const driver_name = document.getElementById('f_driver_name').value;
+    const driver_phone = document.getElementById('f_driver_phone').value;
+    const plate_no = document.getElementById('f_plate').value;
+    const received_by = document.getElementById('f_received_by').value;
+    const remarks = document.getElementById('f_remarks').value;
+    const qty = parseInt(document.getElementById('f_qty').value);
+    const items = collectItems();
+    const docFile = document.getElementById('f_doc').files[0] || null;
+
+    if (items.length === 0) { showErrorDialog('Click "Generate Item Rows" first.'); return; }
+    if (items.length !== qty) { showErrorDialog(`Item row count (${items.length}) does not match Total S/N in this batch (${qty}).`); return; }
+    if (items.some(it => !it.sn || !it.tire_size || !it.pattern)) { showErrorDialog('Every item row needs a Serial Number, Tire Size, and Pattern before saving.'); return; }
+
+    try {
+      await ReceivingDB.create({ no, posting_date, delivery_date, receive_date, receiving_type, vendor_id, from_whs, to_whs, qty, driver_name, driver_phone, plate_no, received_by, remarks }, items, docFile);
+      ['f_no','f_posting_date','f_delivery_date','f_receive_date','f_driver_name','f_driver_phone','f_plate','f_qty','f_doc','f_received_by','f_remarks'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('itemsCard').style.display = 'none';
+      document.getElementById('itemsWrap').innerHTML = '';
+      await loadReceivings();
+    } catch (err) {
+      showErrorDialog(err.message);
+    }
+  }
+
+  async function exportPdf(r) {
+    if (!r) { showErrorDialog('Receiving record was not found. Please refresh and try again.'); return; }
+    if (typeof window.html2pdf !== 'function') { showErrorDialog('PDF library could not be loaded. Check your internet connection and try again.'); return; }
+    const items = stock.filter(s => s.receiving_id === r.id);
+    const printArea = document.getElementById('printArea');
+    printArea.innerHTML = `
+      <div class="dn-header"><div class="dn-co">PT. LUAN TIRE INDONESIA</div></div>
+      <h2 class="dn-title">GOODS RECEIVING NOTE</h2>
+      <div class="dn-meta">
+        <div><span class="k">Receiving No.</span> : ${r.no}</div>
+        <div><span class="k">Received By</span> : ${r.received_by || ''}</div>
+        <div><span class="k">Posting Date</span> : ${r.posting_date || ''}</div>
+        <div><span class="k">Delivery Date</span> : ${r.delivery_date || ''}</div>
+        <div><span class="k">Receiving Date</span> : ${r.receive_date || ''}</div>
+        <div><span class="k">Type</span> : ${r.receiving_type}</div>
+        <div><span class="k">Source</span> : ${r.vendors ? r.vendors.name : (r.from_whs || '')}</div>
+        <div><span class="k">To Warehouse</span> : ${r.to_whs}</div>
+        <div><span class="k">Driver</span> : ${r.driver_name || ''} ${r.driver_phone ? '(' + r.driver_phone + ')' : ''}</div>
+        <div><span class="k">Plate No.</span> : ${r.plate_no || ''}</div>
+      </div>
+      <table class="dn-table">
+        <thead><tr><th>No.</th><th>Serial Number</th><th>Tire Size</th><th>Pattern</th><th>Compound</th></tr></thead>
+        <tbody>
+          ${items.map((s, i) => `<tr><td>${i+1}</td><td>${s.sn}</td><td>${s.tire_size||''}</td><td>${s.pattern||''}</td><td>${s.compound||''}</td></tr>`).join('')}
+          <tr><td colspan="4" style="text-align:right; font-weight:bold;">TOTAL S/N</td><td style="text-align:center; font-weight:bold;">${items.length}</td></tr>
+        </tbody>
+      </table>
+      ${r.remarks ? `<div style="font-size:11px; margin-bottom:16px;"><strong>Remarks:</strong> ${r.remarks}</div>` : ''}
+      <div class="dn-sign">
+        <div class="col">Delivered By:<div class="line"></div></div>
+        <div class="col">Received By:<div class="line">${r.received_by || ''}</div></div>
+      </div>
+    `;
+    // html2canvas only paints visible, front-layer elements. Make the document
+    // visible for the capture, then hide it again as soon as saving finishes.
+    printArea.classList.add('pdf-rendering');
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    try {
+      await html2pdf().set({ margin: 0, filename: `ReceivingNote_${r.no}.pdf`, html2canvas: { scale: 2, backgroundColor: '#ffffff' }, jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' } })
+        .from(printArea).save();
+    } catch (err) {
+      console.error('Could not export receiving PDF:', err);
+      showErrorDialog('Could not create the PDF. Please try again.');
+    } finally {
+      printArea.classList.remove('pdf-rendering');
+    }
+  }
+
+  function exportPdfById(id) {
+    exportPdf(receivings.find(r => r.id === id));
+  }
+
+  function renderTable() {
+    document.getElementById('tableBody').innerHTML = receivings.map(r => {
+      const itemCount = stock.filter(s => s.receiving_id === r.id).length;
+      return `<tr>
+        <td class="mono">${r.no}</td><td>${r.posting_date||''}</td><td>${r.delivery_date||''}</td><td>${r.receive_date||''}</td><td>${r.receiving_type}</td>
+        <td>${r.vendors ? r.vendors.name : (r.from_whs || '')}</td><td class="mono">${r.to_whs}</td>
+        <td>${r.driver_name || ''}</td><td class="mono">${r.plate_no || ''}</td><td>${r.received_by || ''}</td><td>${r.qty}</td>
+        <td><button class="btn-view btn-sm" onclick="viewItems(${r.id}, '${r.no}')">View (${itemCount})</button></td>
+        <td>${r.source_doc_url ? `<a href="${r.source_doc_url}" target="_blank">📎</a>` : '<span class="muted">—</span>'}</td>
+        <td><span class="badge badge-closed">CLOSED</span></td>
+        <td><button class="btn-view btn-sm" onclick="exportPdfById(${Number(r.id)})">PDF</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function viewItems(receivingId, no) {
+    const items = stock.filter(s => s.receiving_id === receivingId);
+    document.getElementById('itemsModalTitle').textContent = `Items in ${no}`;
+    document.getElementById('itemsModalBody').innerHTML = items.map(s =>
+      `<tr><td class="mono">${s.sn}</td><td>${s.tire_size||''}</td><td>${s.pattern||''}</td><td>${s.compound||''}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="muted">No items found.</td></tr>';
+    document.getElementById('itemsModal').style.display = 'flex';
+  }
+
+  async function loadReceivings() {
+    receivings = await ReceivingDB.list();
+    stock = await InventoryDB.list();
+    renderTable();
+  }
+
+  (async function start() {
+    await loadRef();
+    await loadReceivings();
+  })();
+</script>
+</body>
+</html>

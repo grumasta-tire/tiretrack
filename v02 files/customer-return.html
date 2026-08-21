@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Return</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  .item-row { display: grid; grid-template-columns: 40px 1.2fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .item-row .row-no { color: var(--muted); font-size: 12.5px; text-align: center; }
+  .items-head { display: grid; grid-template-columns: 40px 1.2fr 1fr 1fr 1fr; gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+</style>
+</head>
+<body data-page="customer-return">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Return</h1>
+      <div class="subtitle">Record tires coming back from a customer site.</div>
+    </div>
+
+    <div class="placeholder-note">
+      Saving a return immediately adds each tire back into <strong>Inventory Stock</strong> with status <span class="badge badge-open">RETURN</span>. If a Serial Number isn't found yet (common for tires bought before TireTrack existed), it's registered fresh using the Tire Size/Pattern/Compound you fill in.
+    </div>
+
+    <div class="card">
+      <h2>New Return</h2>
+      <div class="form-grid">
+        <div><label>Return No.</label><input type="text" id="f_no" placeholder="e.g. RTN-2026-005"></div>
+        <div><label>Date</label><input type="date" id="f_date"></div>
+        <div><label>Customer</label><select id="f_customer" onchange="populateSites()"></select></div>
+        <div><label>Site</label><select id="f_site"></select></div>
+        <div><label>Reason</label>
+          <select id="f_reason"><option>Defect Found</option><option>Other</option></select>
+        </div>
+        <div><label>Return to Warehouse</label><select id="f_to_whs"></select></div>
+        <div><label>Driver Name</label><input type="text" id="f_driver_name" placeholder="Driver's full name"></div>
+        <div><label>Driver Phone</label><input type="text" id="f_driver_phone" placeholder="e.g. 0812xxxxxxx"></div>
+        <div><label>Vehicle Plate Number</label><input type="text" id="f_plate" placeholder="e.g. KT 8821 QA"></div>
+        <div><label>Total Qty to Return</label><input type="number" id="f_qty" min="1" placeholder="e.g. 2"></div>
+        <div style="align-self:end;"><button class="btn-secondary" onclick="generateItemRows()">Generate Item Rows</button></div>
+      </div>
+    </div>
+
+    <div class="card" id="itemsCard" style="display:none;">
+      <h2>Items (<span id="itemsExpected">0</span> S/N expected)</h2>
+      <div class="subtitle" style="margin-bottom:10px;">Serial Number is looked up automatically. If found, Size/Pattern/Compound lock from the existing record; if not, fill them in to register this tire for the first time.</div>
+      <div class="items-head"><div>#</div><div>Serial Number</div><div>Tire Size</div><div>Pattern</div><div>Compound</div></div>
+      <div id="itemsWrap"></div>
+      <datalist id="tireSizeList"></datalist>
+    </div>
+
+    <div class="card">
+      <div class="form-actions"><button class="btn-primary" onclick="saveReturn()">Save Return</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Return History</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Return No.</th><th>Date</th><th>Customer</th><th>Site</th><th>Reason</th><th>Driver</th><th>Plate No.</th><th>Qty</th><th>To WHS</th><th>Items</th><th>Status</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="itemsModal" style="display:none; position:fixed; inset:0; background:rgba(15,42,71,0.45); z-index:50; align-items:center; justify-content:center;">
+  <div class="card" style="width:480px; max-height:70vh; overflow-y:auto; margin:0;">
+    <h2 id="itemsModalTitle">Items</h2>
+    <div class="table-wrap" style="max-height:400px;">
+      <table><thead><tr><th>S/N</th><th>Brand</th><th>Tire Size</th><th>Pattern</th></tr></thead><tbody id="itemsModalBody"></tbody></table>
+    </div>
+    <div class="form-actions" style="margin-top:14px;"><button class="btn-secondary" onclick="document.getElementById('itemsModal').style.display='none';">Close</button></div>
+  </div>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="ui-utils.js"></script>
+<script>
+  AppShell.init();
+
+  let customers = [];
+  let returns = [];
+
+  async function loadRef() {
+    customers = await RefDB.customers();
+    document.getElementById('f_customer').innerHTML = customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    const warehouses = await RefDB.warehouses();
+    document.getElementById('f_to_whs').innerHTML = warehouses.filter(w => w.code !== 'CST-WHS').map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
+    const tireCatalog = await RefDB.tireCatalog();
+    const sizes = [...new Set(tireCatalog.map(t => t.tire_size))];
+    document.getElementById('tireSizeList').innerHTML = sizes.map(s => `<option value="${s}">`).join('');
+    populateSites();
+  }
+
+  function populateSites() {
+    const c = customers.find(c => String(c.id) === document.getElementById('f_customer').value);
+    document.getElementById('f_site').innerHTML = c ? c.customer_sites.map(s => `<option value="${s.id}">${s.site_name}</option>`).join('') : '';
+  }
+
+  function generateItemRows() {
+    const qty = parseInt(document.getElementById('f_qty').value);
+    if (!qty || qty < 1) { showErrorDialog('Enter a valid "Total Qty to Return" first (must be 1 or more).'); return; }
+    document.getElementById('itemsExpected').textContent = qty;
+    document.getElementById('itemsCard').style.display = 'block';
+    const wrap = document.getElementById('itemsWrap');
+    wrap.innerHTML = '';
+    for (let i = 1; i <= qty; i++) {
+      const rowId = 'item_' + i;
+      wrap.insertAdjacentHTML('beforeend', `
+        <div class="item-row" id="${rowId}">
+          <div class="row-no">${i}</div>
+          <input type="text" placeholder="Serial Number" data-col="sn" data-mono="true" onchange="lookupSN('${rowId}', this.value)">
+          <input type="text" placeholder="Tire Size" data-col="tire_size" list="tireSizeList">
+          <input type="text" placeholder="Pattern" data-col="pattern">
+          <input type="text" placeholder="Compound" data-col="compound">
+        </div>`);
+    }
+  }
+
+  async function lookupSN(rowId, sn) {
+    const row = document.getElementById(rowId);
+    const tire = await InventoryDB.getBySN(sn.trim());
+    const sizeInp = row.querySelector('[data-col="tire_size"]');
+    const patternInp = row.querySelector('[data-col="pattern"]');
+    const compoundInp = row.querySelector('[data-col="compound"]');
+    if (tire) {
+      sizeInp.value = tire.tire_size || ''; patternInp.value = tire.pattern || ''; compoundInp.value = tire.compound || '';
+      [sizeInp, patternInp, compoundInp].forEach(el => el.disabled = true);
+      row.style.outline = 'none';
+    } else {
+      [sizeInp, patternInp, compoundInp].forEach(el => el.disabled = false);
+      row.style.outline = '1px solid var(--amber)';
+    }
+  }
+
+  function collectItems() {
+    return [...document.querySelectorAll('.item-row')].map(row => {
+      const obj = {};
+      row.querySelectorAll('input').forEach(inp => obj[inp.dataset.col] = inp.value.trim());
+      return obj;
+    });
+  }
+
+  async function saveReturn() {
+    const ok = validateRequired([
+      { id: 'f_no', label: 'Return No.' }, { id: 'f_date', label: 'Date' },
+      { id: 'f_customer', label: 'Customer' }, { id: 'f_site', label: 'Site' },
+      { id: 'f_to_whs', label: 'Return to Warehouse' }, { id: 'f_driver_name', label: 'Driver Name' },
+      { id: 'f_plate', label: 'Vehicle Plate Number' }, { id: 'f_qty', label: 'Total Qty to Return' }
+    ]);
+    if (!ok) return;
+
+    const no = document.getElementById('f_no').value, date = document.getElementById('f_date').value,
+          customer_id = document.getElementById('f_customer').value, site_id = document.getElementById('f_site').value,
+          reason = document.getElementById('f_reason').value, to_whs = document.getElementById('f_to_whs').value,
+          driver_name = document.getElementById('f_driver_name').value, driver_phone = document.getElementById('f_driver_phone').value,
+          plate_no = document.getElementById('f_plate').value, qty = parseInt(document.getElementById('f_qty').value);
+    const items = collectItems();
+
+    if (items.length === 0) { showErrorDialog('Click "Generate Item Rows" first.'); return; }
+    if (items.length !== qty) { showErrorDialog(`Item row count (${items.length}) does not match Total Qty to Return (${qty}).`); return; }
+    if (items.some(it => !it.sn || !it.tire_size || !it.pattern)) { showErrorDialog('Every item row needs a Serial Number, Tire Size, and Pattern.'); return; }
+
+    try {
+      await ReturnDB.create({ return_no: no, date, customer_id, site_id, reason, to_whs, driver_name, driver_phone, plate_no, qty }, items);
+      ['f_no','f_date','f_driver_name','f_driver_phone','f_plate','f_qty'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('itemsCard').style.display = 'none';
+      document.getElementById('itemsWrap').innerHTML = '';
+      await loadReturns();
+    } catch (err) {
+      showErrorDialog(err.message);
+    }
+  }
+
+  function viewItems(items, no) {
+    document.getElementById('itemsModalTitle').textContent = `Items in ${no}`;
+    document.getElementById('itemsModalBody').innerHTML = items.map(it =>
+      `<tr><td class="mono">${it.sn}</td><td>${it.tire_inventory?.brand||''}</td><td>${it.tire_inventory?.tire_size||''}</td><td>${it.tire_inventory?.pattern||''}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="muted">No items found.</td></tr>';
+    document.getElementById('itemsModal').style.display = 'flex';
+  }
+
+  function renderTable() {
+    document.getElementById('tableBody').innerHTML = returns.map(r => `
+      <tr><td class="mono">${r.return_no}</td><td>${r.date}</td><td>${r.customers?.name||''}</td><td>${r.customer_sites?.site_name||''}</td>
+      <td>${r.reason}</td><td>${r.driver_name||''}</td><td class="mono">${r.plate_no||''}</td><td>${r.qty}</td><td class="mono">${r.to_whs}</td>
+      <td><button class="btn-view btn-sm" onclick='viewItems(${JSON.stringify(r.return_items||[]).replace(/'/g, "&#39;")}, "${r.return_no}")'>View (${(r.return_items||[]).length})</button></td>
+      <td><span class="badge badge-closed">CLOSED</span></td></tr>`).join('');
+  }
+
+  async function loadReturns() {
+    returns = await ReturnDB.list();
+    renderTable();
+  }
+
+  (async function start() {
+    await loadRef();
+    await loadReturns();
+  })();
+</script>
+</body>
+</html>

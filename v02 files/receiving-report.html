@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Receiving Report</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="export-utils.js"></script>
+</head>
+<body data-page="receiving-report">
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+  <main class="main">
+    <div class="page-head"><h1>Receiving Report</h1><div class="subtitle">Every tire received, listed individually by S/N so it can be analyzed in Excel.</div></div>
+    <div class="filter-bar">
+      <div class="filter-field"><label>From (Receiving Date)</label><input type="date" id="fFrom" value="2026-01-01"></div>
+      <div class="filter-field"><label>To (Receiving Date)</label><input type="date" id="fTo" value="2026-12-31"></div>
+      <div class="filter-field"><label>Warehouse</label>
+        <select id="fWhs"><option value="">All</option><option value="JKT-WHS">JKT-WHS</option><option value="BPN-WHS">BPN-WHS</option></select>
+      </div>
+      <div class="filter-field"><button class="btn-primary btn-sm" onclick="applyFilters()">Apply</button></div>
+      <div class="filter-field filter-field-right"><button class="btn-accent btn-sm" onclick="exportTableToExcel('reportTable', 'Receiving_Report.xlsx')">Export to Excel</button></div>
+    </div>
+    <div class="card">
+      <h2>Receiving Detail <span class="badge badge-count" id="rowCount">0</span></h2>
+      <div class="table-wrap">
+        <table id="reportTable">
+          <thead><tr><th>Receiving No.</th><th>S/N</th><th>Brand</th><th>Tire Size</th><th>Pattern</th><th>Compound</th><th>Posting Date</th><th>Delivery Date</th><th>Receiving Date</th><th>Type</th><th>Vendor / Source WHS</th><th>To WHS</th><th>Driver</th><th>Driver Phone</th><th>Plate No.</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script>
+  AppShell.init();
+  let stock = [], receivings = [];
+
+  function applyFilters() {
+    const from = document.getElementById('fFrom').value;
+    const to = document.getElementById('fTo').value;
+    const whs = document.getElementById('fWhs').value;
+    const recById = Object.fromEntries(receivings.map(r => [r.id, r]));
+
+    let rows = stock.filter(s => s.receiving_id && recById[s.receiving_id]);
+    rows = rows.map(s => ({ tire: s, rec: recById[s.receiving_id] }));
+    rows = rows.filter(({ rec }) => (!from || (rec.receive_date && rec.receive_date >= from)) && (!to || (rec.receive_date && rec.receive_date <= to)));
+    if (whs) rows = rows.filter(({ rec }) => rec.to_whs === whs);
+
+    document.getElementById('rowCount').textContent = rows.length;
+    document.getElementById('tableBody').innerHTML = rows.map(({ tire: s, rec: r }) => `
+      <tr><td class="mono">${r.no}</td><td class="mono">${s.sn}</td><td>${s.brand||''}</td><td>${s.tire_size||''}</td><td>${s.pattern||''}</td><td>${s.compound||''}</td>
+      <td>${r.posting_date||''}</td><td>${r.delivery_date||''}</td><td>${r.receive_date||''}</td><td>${r.receiving_type}</td>
+      <td>${r.vendors ? r.vendors.name : (r.from_whs||'')}</td><td class="mono">${r.to_whs}</td>
+      <td>${r.driver_name||''}</td><td>${r.driver_phone||''}</td><td class="mono">${r.plate_no||''}</td></tr>`).join('');
+  }
+
+  (async function () {
+    stock = await InventoryDB.list();
+    receivings = await ReceivingDB.list();
+    applyFilters();
+  })();
+</script>
+</body>
+</html>

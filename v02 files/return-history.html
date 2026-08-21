@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Return History</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body data-page="return-history">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Return History</h1>
+      <div class="subtitle">All tires returned from customer sites.</div>
+    </div>
+
+    <div class="card">
+      <h2>Returns</h2>
+      <div id="recordBrowserMount"></div>
+      <div class="record-detail" id="recordDetail"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Return No.</th><th>Date</th><th>Customer</th><th>Site</th><th>S/N</th><th>Reason</th><th>Driver</th><th>Plate No.</th><th>To Warehouse</th><th>Status</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="record-browser.js"></script>
+<script>
+  AppShell.init();
+  let returns = [];
+  let browser;
+
+  function renderTable() {
+    document.getElementById('tableBody').innerHTML = returns.map(r => `
+      <tr><td class="mono">${r.return_no}</td><td>${r.date}</td><td>${r.customers?.name||''}</td><td>${r.customer_sites?.site_name||''}</td>
+      <td class="mono">${r.sn}</td><td>${r.reason}</td><td>${r.driver_name||''}</td><td class="mono">${r.plate_no||''}</td><td class="mono">${r.to_whs}</td>
+      <td><span class="badge badge-closed">CLOSED</span></td></tr>`).join('');
+  }
+
+  function renderDetail(r) {
+    const el = document.getElementById('recordDetail');
+    if (!r) { el.innerHTML = '<div class="rd-empty">No records yet.</div>'; return; }
+    el.innerHTML = `
+      <div class="rd-row"><div class="rd-key">Return No.</div><div class="rd-val">${r.return_no}</div></div>
+      <div class="rd-row"><div class="rd-key">Date</div><div class="rd-val">${r.date}</div></div>
+      <div class="rd-row"><div class="rd-key">Customer</div><div class="rd-val">${r.customers?.name||''} — ${r.customer_sites?.site_name||''}</div></div>
+      <div class="rd-row"><div class="rd-key">S/N</div><div class="rd-val">${r.sn}</div></div>
+      <div class="rd-row"><div class="rd-key">Reason</div><div class="rd-val">${r.reason}</div></div>
+      <div class="rd-row"><div class="rd-key">Driver</div><div class="rd-val">${r.driver_name||'—'} ${r.driver_phone?'('+r.driver_phone+')':''}</div></div>
+      <div class="rd-row"><div class="rd-key">Plate No.</div><div class="rd-val">${r.plate_no||'—'}</div></div>
+      <div class="rd-row"><div class="rd-key">To Warehouse</div><div class="rd-val">${r.to_whs}</div></div>`;
+  }
+
+  (async function start() {
+    returns = await ReturnDB.list();
+    renderTable();
+    browser = RecordBrowser.init({ mountId: 'recordBrowserMount', getRecords: () => returns, searchKeys: ['return_no', 'sn'], onShow: renderDetail });
+  })();
+</script>
+</body>
+</html>

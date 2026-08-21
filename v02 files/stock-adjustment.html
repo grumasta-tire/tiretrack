@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Stock Adjustment</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+  .item-row { display: grid; grid-template-columns: 40px 1.2fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .item-row .row-no { color: var(--muted); font-size: 12.5px; text-align: center; }
+  .items-head { display: grid; grid-template-columns: 40px 1.2fr 1fr 1fr 1fr; gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+  #printArea { position: absolute; top: 0; left: 0; width: 794px; opacity: 0; pointer-events: none; z-index: -1; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; padding: 36px 40px; }
+  #printArea .dn-header { border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
+  #printArea .dn-co { font-weight: bold; font-size: 13px; }
+  #printArea .dn-meta { font-size: 11px; margin-bottom: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 20px; }
+  #printArea .dn-meta div { display: flex; }
+  #printArea .dn-meta span.k { width: 130px; color: #333; }
+  #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 16px; margin: 10px 0 16px; }
+  #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-bottom: 18px; }
+  #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 5px 6px; text-align: left; }
+  #printArea table.dn-table th { background: #f0f0f0; text-align: center; }
+</style>
+</head>
+<body data-page="stock-adjustment">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Stock Adjustment</h1>
+      <div class="subtitle">Register opening balance stock, or remove tires due to damage/loss/correction.</div>
+    </div>
+
+    <div class="placeholder-note">Adjustments cannot be edited or deleted once saved. <strong>Opening Balance</strong> adds each S/N into stock; any other reason removes the matching S/N from active stock.</div>
+
+    <div class="card">
+      <h2>New Adjustment</h2>
+      <div class="form-grid">
+        <div><label>Adjustment No.</label><input type="text" id="f_no" placeholder="Auto-generated from date"></div>
+        <div><label>Date</label><input type="date" id="f_date" onchange="autoGenerateNo()"></div>
+        <div><label>Reason</label>
+          <select id="f_reason"><option>Opening Balance</option><option>Damaged</option><option>Lost / Missing</option><option>Count Correction</option><option>Other</option></select>
+        </div>
+        <div><label>To Warehouse</label><select id="f_to_whs"></select></div>
+      </div>
+      <div style="margin-top:14px;">
+        <label>Notes (Justification)</label>
+        <textarea id="f_notes" rows="3" placeholder="Explain why this adjustment is needed." style="width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; font-family:inherit; resize:vertical;"></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Items</h2>
+      <div class="form-grid">
+        <div><label>Total Qty</label><input type="number" id="f_qty" min="1" placeholder="e.g. 5"></div>
+        <div style="align-self:end;"><button class="btn-secondary" onclick="generateItemRows()">Generate Item Rows</button></div>
+        <div style="align-self:end; color:var(--muted); font-size:12.5px;">— or —</div>
+        <div><label>Upload by Batch from Excel <span style="text-transform:none; font-weight:400;">(auto-fills rows below)</span></label>
+          <input type="file" id="batchFile" accept=".xlsx,.xls,.csv" onchange="handleBatchFile()">
+        </div>
+      </div>
+      <div class="subtitle" style="margin-top:8px;">Batch file needs columns: sn, tire_size, pattern, compound (header names, any order).</div>
+    </div>
+
+    <div class="card" id="itemsCard" style="display:none;">
+      <h2>Items (<span id="itemsExpected">0</span> S/N expected)</h2>
+      <div class="items-head"><div>#</div><div>Serial Number</div><div>Tire Size</div><div>Pattern</div><div>Compound</div></div>
+      <div id="itemsWrap"></div>
+      <datalist id="tireSizeList"></datalist>
+    </div>
+
+    <div class="card">
+      <div class="form-actions"><button class="btn-primary" onclick="saveAdjustment()">Save Adjustment</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Adjustment History</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Adj. No.</th><th>Date</th><th>Reason</th><th>To WHS</th><th>Qty</th><th>Notes</th><th>Items</th><th>Status</th><th></th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="itemsModal" style="display:none; position:fixed; inset:0; background:rgba(15,42,71,0.45); z-index:50; align-items:center; justify-content:center;">
+  <div class="card" style="width:480px; max-height:70vh; overflow-y:auto; margin:0;">
+    <h2 id="itemsModalTitle">Items</h2>
+    <div class="table-wrap" style="max-height:400px;">
+      <table><thead><tr><th>S/N</th><th>Tire Size</th><th>Pattern</th><th>Compound</th></tr></thead><tbody id="itemsModalBody"></tbody></table>
+    </div>
+    <div class="form-actions" style="margin-top:14px;"><button class="btn-secondary" onclick="document.getElementById('itemsModal').style.display='none';">Close</button></div>
+  </div>
+</div>
+
+<div id="printArea"></div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="ui-utils.js"></script>
+<script>
+  AppShell.init();
+
+  let adjustments = [];
+  let batchRows = null;
+  let tireCatalog = [];
+
+  async function loadRef() {
+    const warehouses = await RefDB.warehouses();
+    document.getElementById('f_to_whs').innerHTML = warehouses.filter(w => w.code !== 'CST-WHS').map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
+    tireCatalog = await RefDB.tireCatalog();
+    const sizes = [...new Set(tireCatalog.map(t => t.tire_size))];
+    document.getElementById('tireSizeList').innerHTML = sizes.map(s => `<option value="${s}">`).join('');
+  }
+
+  function autoGenerateNo() {
+    const dateVal = document.getElementById('f_date').value;
+    if (!dateVal) return;
+    const [yyyy, mm, dd] = dateVal.split('-');
+    document.getElementById('f_no').value = `ADJ_${dd}${mm}${yyyy}`;
+  }
+
+  function handleBatchFile() {
+    const file = document.getElementById('batchFile').files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+        if (rows.length === 0) { showErrorDialog('The file has no rows.'); return; }
+        batchRows = rows.map(r => ({
+          sn: String(r.sn || r.SN || r['Serial Number'] || '').trim(),
+          tire_size: String(r.tire_size || r['Tire Size'] || '').trim(),
+          pattern: String(r.pattern || r.Pattern || '').trim(),
+          compound: String(r.compound || r.Compound || '').trim()
+        })).filter(r => r.sn);
+        document.getElementById('f_qty').value = batchRows.length;
+        generateItemRows(batchRows);
+      } catch (err) {
+        showErrorDialog('Could not read this file. Make sure it is a valid .xlsx or .csv file.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function generateItemRows(prefill) {
+    const qty = parseInt(document.getElementById('f_qty').value);
+    if (!qty || qty < 1) { showErrorDialog('Enter a valid "Total Qty" first (must be 1 or more), or upload a batch file.'); return; }
+    document.getElementById('itemsExpected').textContent = qty;
+    document.getElementById('itemsCard').style.display = 'block';
+    const wrap = document.getElementById('itemsWrap');
+    wrap.innerHTML = '';
+    for (let i = 1; i <= qty; i++) {
+      const v = (prefill && prefill[i - 1]) || {};
+      wrap.insertAdjacentHTML('beforeend', `
+        <div class="item-row">
+          <div class="row-no">${i}</div>
+          <input type="text" placeholder="Serial Number" data-col="sn" data-mono="true" value="${v.sn || ''}">
+          <input type="text" placeholder="Tire Size" data-col="tire_size" list="tireSizeList" value="${v.tire_size || ''}">
+          <input type="text" placeholder="Pattern" data-col="pattern" value="${v.pattern || ''}">
+          <input type="text" placeholder="Compound" data-col="compound" value="${v.compound || ''}">
+        </div>`);
+    }
+  }
+
+  function collectItems() {
+    return [...document.querySelectorAll('.item-row')].map(row => {
+      const obj = {};
+      row.querySelectorAll('input').forEach(inp => obj[inp.dataset.col] = inp.value.trim());
+      return obj;
+    });
+  }
+
+  async function saveAdjustment() {
+    if (!validateRequired([
+      { id: 'f_no', label: 'Adjustment No.' }, { id: 'f_date', label: 'Date' },
+      { id: 'f_to_whs', label: 'To Warehouse' }, { id: 'f_qty', label: 'Total Qty' }, { id: 'f_notes', label: 'Notes' }
+    ])) return;
+
+    const no = document.getElementById('f_no').value, date = document.getElementById('f_date').value,
+          reason = document.getElementById('f_reason').value, to_whs = document.getElementById('f_to_whs').value,
+          notes = document.getElementById('f_notes').value, qty = parseInt(document.getElementById('f_qty').value);
+    const items = collectItems();
+
+    if (items.length === 0) { showErrorDialog('Click "Generate Item Rows" first (or upload a batch file).'); return; }
+    if (items.length !== qty) { showErrorDialog(`Item row count (${items.length}) does not match Total Qty (${qty}).`); return; }
+    if (items.some(it => !it.sn)) { showErrorDialog('Every item row needs a Serial Number.'); return; }
+    if (reason === 'Opening Balance' && items.some(it => !it.tire_size || !it.pattern)) {
+      showErrorDialog('For Opening Balance, every item needs at least a Tire Size and Pattern.');
+      return;
+    }
+
+    try {
+      await AdjustmentDB.create({ no, date, reason, to_whs, notes }, items);
+      ['f_qty','f_notes','batchFile'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('itemsCard').style.display = 'none';
+      document.getElementById('itemsWrap').innerHTML = '';
+      batchRows = null;
+      await loadAdjustments();
+      autoGenerateNo();
+    } catch (err) {
+      showErrorDialog(err.message);
+    }
+  }
+
+  function exportPdf(a) {
+    document.getElementById('printArea').innerHTML = `
+      <div class="dn-header"><div class="dn-co">PT. LUAN TIRE INDONESIA</div></div>
+      <h2 class="dn-title">STOCK ADJUSTMENT NOTE</h2>
+      <div class="dn-meta">
+        <div><span class="k">Adjustment No.</span> : ${a.no}</div>
+        <div><span class="k">Date</span> : ${a.date || ''}</div>
+        <div><span class="k">Reason</span> : ${a.reason}</div>
+        <div><span class="k">To Warehouse</span> : ${a.to_whs}</div>
+      </div>
+      <table class="dn-table">
+        <thead><tr><th>No.</th><th>Serial Number</th><th>Tire Size</th><th>Pattern</th><th>Compound</th></tr></thead>
+        <tbody>
+          ${(a.adjustment_items||[]).map((it, i) => `<tr><td>${i+1}</td><td>${it.sn}</td><td>${it.tire_size||''}</td><td>${it.pattern||''}</td><td>${it.compound||''}</td></tr>`).join('')}
+          <tr><td colspan="4" style="text-align:right; font-weight:bold;">TOTAL QTY</td><td style="text-align:center; font-weight:bold;">${(a.adjustment_items||[]).length}</td></tr>
+        </tbody>
+      </table>
+      ${a.notes ? `<div style="font-size:11px;"><strong>Notes:</strong> ${a.notes}</div>` : ''}
+    `;
+    html2pdf().set({ margin: 0, filename: `Adjustment_${a.no}.pdf`, html2canvas: { scale: 2, backgroundColor: '#ffffff' }, jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' } })
+      .from(document.getElementById('printArea')).save();
+  }
+
+  function viewItems(items, no) {
+    document.getElementById('itemsModalTitle').textContent = `Items in ${no}`;
+    document.getElementById('itemsModalBody').innerHTML = items.map(it =>
+      `<tr><td class="mono">${it.sn}</td><td>${it.tire_size||''}</td><td>${it.pattern||''}</td><td>${it.compound||''}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="muted">No items found.</td></tr>';
+    document.getElementById('itemsModal').style.display = 'flex';
+  }
+
+  function render() {
+    document.getElementById('tableBody').innerHTML = adjustments.map(a => `
+      <tr><td class="mono">${a.no}</td><td>${a.date||''}</td><td>${a.reason}</td><td class="mono">${a.to_whs}</td>
+      <td>${(a.adjustment_items||[]).length}</td><td style="white-space:normal; max-width:260px;">${a.notes||''}</td>
+      <td><button class="btn-view btn-sm" onclick='viewItems(${JSON.stringify(a.adjustment_items||[]).replace(/'/g, "&#39;")}, "${a.no}")'>View (${(a.adjustment_items||[]).length})</button></td>
+      <td><span class="badge badge-closed">CLOSED</span></td>
+      <td><button class="btn-view btn-sm" onclick='exportPdf(${JSON.stringify(a).replace(/'/g, "&#39;")})'>PDF</button></td></tr>`).join('');
+  }
+
+  async function loadAdjustments() {
+    adjustments = await AdjustmentDB.list();
+    render();
+  }
+
+  (async function start() {
+    await loadRef();
+    await loadAdjustments();
+    document.getElementById('f_date').value = new Date().toISOString().slice(0, 10);
+    autoGenerateNo();
+  })();
+</script>
+</body>
+</html>

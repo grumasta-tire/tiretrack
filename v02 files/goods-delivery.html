@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TireTrack — Goods Delivery</title>
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  .item-row { display: grid; grid-template-columns: 40px 1.2fr 0.9fr 0.9fr 0.9fr 1.1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
+  .item-row .row-no { color: var(--muted); font-size: 12.5px; text-align: center; }
+  .item-row input[data-readonly] { background: #f3f4f6; color: var(--muted); }
+  .items-head { display: grid; grid-template-columns: 40px 1.2fr 0.9fr 0.9fr 0.9fr 1.1fr; gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+  #deliveryPreviewCard { display: none; }
+  #printArea { width: min(794px, 100%); box-sizing: border-box; margin: 0 auto; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; padding: 36px 40px; }
+  #printArea .dn-header { border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
+  #printArea .dn-co { font-weight: bold; font-size: 13px; }
+  #printArea .dn-meta { font-size: 11px; margin-bottom: 14px; }
+  #printArea .dn-meta div { display: flex; margin-bottom: 3px; }
+  #printArea .dn-meta span.k { width: 140px; color: #333; }
+  #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 16px; margin: 10px 0 16px; }
+  #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-bottom: 18px; }
+  #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 5px 6px; text-align: left; }
+  #printArea table.dn-table th { background: #f0f0f0; text-align: center; }
+  @media print {
+    body * { visibility: hidden; }
+    #deliveryPreviewCard, #deliveryPreviewCard * { visibility: visible; }
+    #deliveryPreviewCard { position: absolute; inset: 0 auto auto 0; width: 100%; border: 0; box-shadow: none; }
+    #deliveryPreviewCard .preview-actions, #deliveryPreviewCard h2 { display: none !important; }
+    #printArea { width: 794px; margin: 0; padding: 28px 32px; }
+  }
+</style>
+</head>
+<body data-page="goods-delivery">
+
+<div class="app-shell" id="appShell">
+  <aside class="sidebar" id="sidebarMount"></aside>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Goods Delivery</h1>
+      <div class="subtitle">Ship tires out — either to another warehouse or directly to a customer.</div>
+    </div>
+
+    <div class="placeholder-note">Saved delivery notes cannot be edited or deleted. Status is set automatically once POD (receiver name + receipt date + scanned surat jalan) is complete.</div>
+
+    <div class="card">
+      <h2>Shipment Details</h2>
+      <div class="form-grid">
+        <div><label>Delivery Note No.</label><input type="text" id="hf_note_no" placeholder="e.g. SJ-2026-0712"><div class="subtitle" id="noteNoHint" style="margin-top:4px; font-size:11.5px;"></div></div>
+        <div><label>Delivery Date</label><input type="date" id="hf_date"></div>
+        <div><label>Delivery Type</label>
+          <select id="hf_type" onchange="toggleDeliveryType()">
+            <option value="Customer Delivery">Customer Delivery</option>
+            <option value="Warehouse Transfer">Warehouse Transfer</option>
+          </select>
+        </div>
+        <div><label>From Warehouse</label><select id="hf_from_whs"></select></div>
+        <div id="toWhsWrap" style="display:none;"><label>To Warehouse</label><select id="hf_to_whs"></select></div>
+        <div id="customerWrap"><label>Customer</label><select id="hf_customer" onchange="populateSites()"></select></div>
+        <div id="siteWrap"><label>Site</label><select id="hf_site"></select></div>
+        <div><label>Driver Name</label><input type="text" id="hf_driver_name" placeholder="Driver's full name"></div>
+        <div><label>Driver Phone</label><input type="text" id="hf_driver_phone" placeholder="e.g. 0812xxxxxxx"></div>
+        <div><label>Vehicle Plate Number</label><input type="text" id="hf_plate" placeholder="e.g. KT 8821 QA"></div>
+        <div><label>Total Qty to Ship</label><input type="number" id="hf_qty" min="1" placeholder="e.g. 12"></div>
+        <div><label>Attachments <span style="text-transform:none; font-weight:400;">(optional, up to 4 files)</span></label>
+          <input type="file" id="hf_attachments" accept="image/*,.pdf" multiple onchange="validateAttachmentCount()">
+          <div class="subtitle" id="attachmentHint" style="margin-top:4px; font-size:11.5px;"></div>
+        </div>
+        <div><label>PO Customer</label><input type="text" id="hf_po_customer" placeholder="Customer's purchase order number"></div>
+        <div><label>CI Number</label><input type="text" id="hf_ci_number" placeholder="Optional"></div>
+        <div><label>PO Date</label><input type="date" id="hf_po_date"></div>
+        <div><label>No. Container</label><input type="text" id="hf_no_container" placeholder="Optional"></div>
+        <div><label>Vendor <span style="text-transform:none; font-weight:400;">(shipping/pickup arrangement)</span></label><input type="text" id="hf_shipping_vendor" placeholder='e.g. "PICKUP SELF" or forwarder name'></div>
+        <div><label>ETA</label><input type="text" id="hf_eta" placeholder="Optional"></div>
+        <div style="align-self:end;"><button class="btn-secondary" onclick="generateItemRows()">Generate Item Rows</button></div>
+      </div>
+      <div style="margin-top:14px;">
+        <label>Remarks <span style="text-transform:none; font-weight:400;">(optional)</span></label>
+        <textarea id="hf_remarks" rows="2" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; font-family:inherit; resize:vertical;"></textarea>
+      </div>
+    </div>
+
+    <div class="card" id="itemsCard" style="display:none;">
+      <h2>Items (<span id="itemsExpected">0</span> S/N expected)</h2>
+      <div class="subtitle" style="margin-bottom:10px;">Type a Serial Number that exists in stock — Brand, Size, and Type fill in automatically.</div>
+      <div class="items-head"><div>#</div><div>Serial Number</div><div>Brand</div><div>Size</div><div>Type</div><div>Remarks</div></div>
+      <div id="itemsWrap"></div>
+    </div>
+
+    <div class="card">
+      <div class="form-actions">
+        <button class="btn-primary" onclick="saveDelivery()">Save Delivery Note</button>
+        <button class="btn-secondary" onclick="clearForm()">Clear Form</button>
+      </div>
+      <div id="statusMsg" style="display:none; margin-top:12px; padding:9px 12px; border-radius:6px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Saved Delivery Notes</h2>
+      <div id="recordBrowserMount"></div>
+      <div class="record-detail" id="recordDetail"></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Note No.</th><th>Date</th><th>Type</th><th>Route</th><th>Driver</th><th>Plate No.</th><th>Qty</th><th>Items</th><th>Status</th><th>POD</th><th></th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" id="deliveryPreviewCard">
+      <h2>Delivery Note Preview — <span id="previewNoteNo"></span></h2>
+      <div class="subtitle" style="margin-bottom:14px;">Review the document below. <strong>Save to PDF</strong> opens your browser's print dialog; choose <em>Save as PDF</em> as the destination.</div>
+      <div class="form-actions preview-actions" style="margin-bottom:16px;">
+        <button class="btn-primary" onclick="printDeliveryNote()">Print</button>
+        <button class="btn-secondary" onclick="saveDeliveryNotePdf()">Save to PDF</button>
+        <button class="btn-secondary" onclick="closeDeliveryPreview()">Close Preview</button>
+      </div>
+      <div id="printArea"></div>
+    </div>
+  </main>
+</div>
+
+<div id="podModal" style="display:none; position:fixed; inset:0; background:rgba(15,42,71,0.45); z-index:50; align-items:center; justify-content:center;">
+  <div class="card" style="width:420px; margin:0;">
+    <h2>Upload POD — <span id="podNoteNo"></span></h2>
+    <div class="subtitle" style="margin-bottom:14px;">All three fields are required before this delivery can close.</div>
+    <div style="margin-bottom:12px;"><label>Receiver Name</label><input type="text" id="pod_receiver" placeholder="Name of person who received the goods"></div>
+    <div style="margin-bottom:12px;"><label>Receipt Date</label><input type="date" id="pod_date"></div>
+    <div style="margin-bottom:16px;"><label>Scanned Surat Jalan (POD)</label><input type="file" id="pod_file" accept="image/*,.pdf"></div>
+    <div class="form-actions">
+      <button class="btn-primary" onclick="confirmPod()">Save POD</button>
+      <button class="btn-secondary" onclick="closePodModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="itemsModal" style="display:none; position:fixed; inset:0; background:rgba(15,42,71,0.45); z-index:50; align-items:center; justify-content:center;">
+  <div class="card" style="width:480px; max-height:70vh; overflow-y:auto; margin:0;">
+    <h2 id="itemsModalTitle">Items</h2>
+    <div class="table-wrap" style="max-height:400px;">
+      <table><thead><tr><th>S/N</th><th>Brand</th><th>Tire Size</th><th>Pattern</th></tr></thead><tbody id="itemsModalBody"></tbody></table>
+    </div>
+    <div class="form-actions" style="margin-top:14px;"><button class="btn-secondary" onclick="document.getElementById('itemsModal').style.display='none';">Close</button></div>
+  </div>
+</div>
+
+<script src="app-shell.js"></script>
+<script src="db.js"></script>
+<script src="status-rules.js"></script>
+<script src="ui-utils.js"></script>
+<script src="record-browser.js"></script>
+<script>
+  AppShell.init();
+
+  let deliveries = [];
+  let receivings = [];
+  let customers = [];
+  let warehouses = [];
+
+  async function loadRef() {
+    customers = await RefDB.customers();
+    warehouses = await RefDB.warehouses();
+    document.getElementById('hf_customer').innerHTML = customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    document.getElementById('hf_from_whs').innerHTML = warehouses.map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
+    document.getElementById('hf_to_whs').innerHTML = warehouses.map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
+    populateSites();
+  }
+
+  function validateAttachmentCount() {
+    const input = document.getElementById('hf_attachments');
+    const hint = document.getElementById('attachmentHint');
+    if (input.files.length > 4) {
+      showErrorDialog('Maximum 4 files allowed. Please reselect.');
+      input.value = '';
+      hint.textContent = '';
+      return;
+    }
+    hint.textContent = input.files.length ? `${input.files.length} file(s) selected.` : '';
+  }
+
+  function toggleDeliveryType() {
+    const isTransfer = document.getElementById('hf_type').value === 'Warehouse Transfer';
+    document.getElementById('toWhsWrap').style.display = isTransfer ? 'block' : 'none';
+    document.getElementById('customerWrap').style.display = isTransfer ? 'none' : 'block';
+    document.getElementById('siteWrap').style.display = isTransfer ? 'none' : 'block';
+  }
+
+  function populateSites() {
+    const c = customers.find(c => String(c.id) === document.getElementById('hf_customer').value);
+    const sel = document.getElementById('hf_site');
+    sel.innerHTML = c ? c.customer_sites.map(s => `<option value="${s.id}">${s.site_name}</option>`).join('') : '';
+  }
+
+  function generateItemRows() {
+    const qty = parseInt(document.getElementById('hf_qty').value);
+    if (!qty || qty < 1) { showErrorDialog('Enter a valid "Total Qty to Ship" first (must be 1 or more).'); return; }
+    document.getElementById('itemsExpected').textContent = qty;
+    document.getElementById('itemsCard').style.display = 'block';
+    const wrap = document.getElementById('itemsWrap');
+    wrap.innerHTML = '';
+    for (let i = 1; i <= qty; i++) {
+      const rowId = 'item_' + i;
+      wrap.insertAdjacentHTML('beforeend', `
+        <div class="item-row" id="${rowId}">
+          <div class="row-no">${i}</div>
+          <input type="text" placeholder="Serial Number" data-col="sn" data-mono="true" onchange="lookupSN('${rowId}', this.value)">
+          <input type="text" placeholder="Brand" data-col="brand" data-readonly readonly>
+          <input type="text" placeholder="Size" data-col="tire_size" data-readonly readonly>
+          <input type="text" placeholder="Type" data-col="pattern" data-readonly readonly>
+          <input type="text" placeholder="Remarks (optional)" data-col="remarks">
+        </div>`);
+    }
+  }
+
+  async function lookupSN(rowId, sn) {
+    const row = document.getElementById(rowId);
+    const tire = await InventoryDB.getBySN(sn.trim());
+    const ok = tire && tire.whs !== 'CST-WHS' && tire.active;
+    row.querySelector('[data-col="brand"]').value = ok ? tire.brand : '';
+    row.querySelector('[data-col="tire_size"]').value = ok ? tire.tire_size : '';
+    row.querySelector('[data-col="pattern"]').value = ok ? tire.pattern : '';
+    row.style.outline = ok ? 'none' : '1px solid var(--danger)';
+  }
+
+  function collectItems() {
+    return [...document.querySelectorAll('.item-row')].map(row => {
+      const obj = {};
+      row.querySelectorAll('input').forEach(inp => obj[inp.dataset.col] = inp.value.trim());
+      return obj;
+    });
+  }
+
+  function clearForm() {
+    ['hf_note_no','hf_date','hf_driver_name','hf_driver_phone','hf_plate','hf_qty','hf_attachments','hf_po_customer','hf_ci_number','hf_po_date','hf_no_container','hf_shipping_vendor','hf_eta','hf_remarks'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('attachmentHint').textContent = '';
+    document.getElementById('itemsCard').style.display = 'none';
+    document.getElementById('itemsWrap').innerHTML = '';
+  }
+
+  async function saveDelivery() {
+    const delivery_type = document.getElementById('hf_type').value;
+    const requiredFields = [
+      { id: 'hf_note_no', label: 'Delivery Note No.' },
+      { id: 'hf_date', label: 'Delivery Date' },
+      { id: 'hf_from_whs', label: 'From Warehouse' },
+      { id: 'hf_driver_name', label: 'Driver Name' },
+      { id: 'hf_plate', label: 'Vehicle Plate Number' },
+      { id: 'hf_qty', label: 'Total Qty to Ship' }
+    ];
+    if (delivery_type === 'Warehouse Transfer') requiredFields.push({ id: 'hf_to_whs', label: 'To Warehouse' });
+    if (delivery_type === 'Customer Delivery') requiredFields.push({ id: 'hf_customer', label: 'Customer' }, { id: 'hf_site', label: 'Site' });
+    if (!validateRequired(requiredFields)) return;
+
+    const note_no = document.getElementById('hf_note_no').value;
+    const date = document.getElementById('hf_date').value;
+    const from_whs = document.getElementById('hf_from_whs').value;
+    const to_whs = delivery_type === 'Warehouse Transfer' ? document.getElementById('hf_to_whs').value : null;
+    const customer_id = delivery_type === 'Customer Delivery' ? document.getElementById('hf_customer').value : null;
+    const site_id = delivery_type === 'Customer Delivery' ? document.getElementById('hf_site').value : null;
+    const driver_name = document.getElementById('hf_driver_name').value;
+    const driver_phone = document.getElementById('hf_driver_phone').value;
+    const plate_no = document.getElementById('hf_plate').value;
+    const po_customer = document.getElementById('hf_po_customer').value;
+    const ci_number = document.getElementById('hf_ci_number').value;
+    const po_date = document.getElementById('hf_po_date').value || null;
+    const no_container = document.getElementById('hf_no_container').value;
+    const shipping_vendor = document.getElementById('hf_shipping_vendor').value;
+    const eta = document.getElementById('hf_eta').value;
+    const remarks = document.getElementById('hf_remarks').value;
+    const qty = parseInt(document.getElementById('hf_qty').value);
+    const items = collectItems();
+
+    if (items.length === 0) { showErrorDialog('Click "Generate Item Rows" first.'); return; }
+    if (items.length !== qty) { showErrorDialog(`Item row count (${items.length}) does not match Total Qty to Ship (${qty}).`); return; }
+    if (items.some(it => !it.sn || !it.brand)) { showErrorDialog('Every item row needs a valid Serial Number found in stock before saving.'); return; }
+
+    try {
+      await DeliveryDB.create({ note_no, date, delivery_type, from_whs, to_whs, customer_id, site_id, driver_name, driver_phone, plate_no, po_customer, ci_number, po_date, no_container, shipping_vendor, eta, remarks, qty }, items, [...document.getElementById('hf_attachments').files]);
+      clearForm();
+      await loadDeliveries();
+    } catch (err) {
+      if (err.message && err.message.includes('duplicate key') && err.message.includes('note_no')) {
+        showErrorDialog(`Delivery Note No. "${note_no}" is already in use. ${suggestNextNoteNo() ? 'Suggested next number: ' + suggestNextNoteNo() : 'Please use a different number.'}`);
+      } else {
+        showErrorDialog(err.message);
+      }
+    }
+  }
+
+  // Looks at existing SJ-YYYY-NNNN style numbers and suggests the next one.
+  function suggestNextNoteNo() {
+    const nums = deliveries
+      .map(d => (d.note_no || '').match(/^(SJ-\d{4}-)(\d+)/))
+      .filter(Boolean)
+      .map(m => ({ prefix: m[1], n: parseInt(m[2]), width: m[2].length }));
+    if (nums.length === 0) return null;
+    const latest = nums.sort((a, b) => b.n - a.n)[0];
+    const next = (latest.n + 1).toString().padStart(latest.width, '0');
+    return latest.prefix + next;
+  }
+
+  function routeLabel(d) {
+    return d.delivery_type === 'Warehouse Transfer'
+      ? `${d.from_whs} → ${d.to_whs}`
+      : `${d.from_whs} → ${d.customers ? d.customers.name : 'CST-WHS'}${d.customer_sites ? ' (' + d.customer_sites.site_name + ')' : ''}`;
+  }
+
+  function statusNote(d, status) {
+    if (d.delivery_type === 'Warehouse Transfer') {
+      return status === 'Closed' ? 'Closed automatically — matching receiving found at destination' : 'Open — waiting for a Goods Receiving entry at destination';
+    }
+    return status === 'Closed' ? 'Closed automatically — POD complete' : 'Open — waiting for POD (receiver name, receipt date, and scanned surat jalan)';
+  }
+
+  let podTargetId = null;
+  function openPodModal(id, noteNo) {
+    podTargetId = id;
+    document.getElementById('podNoteNo').textContent = noteNo;
+    document.getElementById('pod_receiver').value = '';
+    document.getElementById('pod_date').value = '';
+    document.getElementById('pod_file').value = '';
+    document.getElementById('podModal').style.display = 'flex';
+  }
+  function closePodModal() { document.getElementById('podModal').style.display = 'none'; }
+
+  async function confirmPod() {
+    const receiver = document.getElementById('pod_receiver').value;
+    const date = document.getElementById('pod_date').value;
+    const fileInput = document.getElementById('pod_file');
+    const file = fileInput.files[0];
+    if (!receiver || !date || !file) { showErrorDialog('Receiver name, receipt date, and a scanned file are all required.'); return; }
+
+    try {
+      await DeliveryDB.submitPod(podTargetId, receiver, date, file);
+      closePodModal();
+      await loadDeliveries();
+      showStatus('POD saved. Status: Closed.', 'success');
+    } catch (err) {
+      showErrorDialog(err.message, 'Could not upload POD');
+    }
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function exportPdf(d) {
+    if (!d) { showErrorDialog('Delivery record was not found. Please refresh and try again.'); return; }
+    const items = d.delivery_items || [];
+    const customerName = d.customers ? d.customers.name : '';
+    const customerAddress = d.customers ? (d.customers.address || '') : '';
+    const customerPic = d.customers ? (d.customers.pic || '') : '';
+
+    const printArea = document.getElementById('printArea');
+    printArea.innerHTML = `
+      <!-- ===== Section 1: Header ===== -->
+      <div class="dn-header">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div style="font-weight:bold; font-size:15px; letter-spacing:0.5px;">HAI AN GROUP &nbsp;·&nbsp; <span style="color:#c0342b;">LUAN</span> PT. LUAN TIRE INDONESIA</div>
+          <div style="font-size:9px; text-align:right; line-height:1.5;">
+            <strong>Head Office Address:</strong><br>Sampoerna Strategic Square South Tower, 8th Floor<br>Jl. Jenderal Sudirman, Kav. 45-46, South Jakarta, 12930
+          </div>
+        </div>
+        <div style="font-size:9px; margin-top:4px; color:#333;">
+          Member of Haian Group Co., Ltd &nbsp;|&nbsp; Web: www.haiangroup.com &nbsp;|&nbsp; Email: luan.indonesia@haiangroup.com
+        </div>
+      </div>
+      <div style="height:6px; margin:8px 0 16px; background-image: repeating-linear-gradient(-35deg, #111 0 8px, #F2C230 8px 16px);"></div>
+
+      <!-- ===== Section 2: Meta fields ===== -->
+      <div class="dn-meta">
+        <div><span class="k">DELIVERY NOTE NO.</span> : ${d.note_no || ''}</div>
+        <div><span class="k">No Container</span> : ${d.no_container || ''}</div>
+        <div><span class="k">DELIVERY DATE</span> : ${fmtDate(d.date)}</div>
+        <div><span class="k">Vendor</span> : ${d.shipping_vendor || ''}</div>
+        <div><span class="k">CI Number</span> : ${d.ci_number || ''}</div>
+        <div></div>
+        <div><span class="k">PO Number</span> : ${d.po_customer || ''}</div>
+        <div></div>
+        <div><span class="k">PO Date</span> : ${fmtDate(d.po_date)}</div>
+        <div></div>
+      </div>
+
+      <!-- ===== Section 3: Title + parties ===== -->
+      <h2 class="dn-title">DELIVERY NOTE</h2>
+      <div style="font-size:11px; margin-bottom:16px;">
+        <div style="display:flex; margin-bottom:3px;"><span class="k">From (Shipper)</span> : PT. LUAN TIRE INDONESIA</div>
+        <div style="display:flex; margin-bottom:3px;"><span class="k">To (Consignee)</span> : <strong>${customerName}</strong></div>
+        <div style="display:flex; margin-bottom:3px;"><span class="k">Address</span> : ${customerAddress}</div>
+        <div style="display:flex;"><span class="k">PIC</span> : ${customerPic}</div>
+      </div>
+
+      <!-- ===== Section 4: Item table ===== -->
+      <table class="dn-table">
+        <thead>
+          <tr><th rowspan="2">No.</th><th colspan="4">Item Description</th><th rowspan="2">QTY</th><th rowspan="2">Remarks</th></tr>
+          <tr><th>Brand</th><th>Size</th><th>Type</th><th>Serial Number</th></tr>
+        </thead>
+        <tbody>
+          ${items.map((it, i) => `<tr><td>${i+1}</td><td>${it.tire_inventory?.brand||''}</td><td>${it.tire_inventory?.tire_size||''}</td><td>${it.tire_inventory?.pattern||''}</td><td>${it.sn||''}</td><td></td><td>${it.remarks||''}</td></tr>`).join('')}
+          <tr><td colspan="5" style="text-align:center; font-weight:bold;">TOTAL QTY</td><td colspan="2" style="text-align:center; font-weight:bold;">${d.qty} PCS</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ===== Section 5: Signatures + footer ===== -->
+      <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:50px;">
+        <div><strong>DELIVERY BY</strong> &nbsp;:</div>
+        <div><strong>RECEIVED BY</strong> &nbsp;:</div>
+      </div>
+      <div class="dn-sign">
+        <div class="col">
+          <div style="text-decoration:underline; font-weight:bold;">PT. LUAN TIRE INDONESIA</div>
+          <div class="line" style="margin-top:60px; border-top:none; padding-top:0;">
+            Driver &nbsp;: ${d.driver_name || ''}<br>
+            No HP &nbsp;&nbsp;: ${d.driver_phone || ''}<br>
+            ETA &nbsp;&nbsp;&nbsp;&nbsp;: ${d.eta || ''}
+          </div>
+        </div>
+        <div class="col">
+          <div style="text-decoration:underline; font-weight:bold;">${customerName}</div>
+          <div class="line" style="margin-top:20px; border-top:none; padding-top:0;">
+            Name : ${d.receiver_name || ''}<br>
+            Date &nbsp;: ${fmtDate(d.receipt_date)}
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:40px; font-size:10px; color:#333;">
+        PT. LUAN TIRE INDONESIA<br>
+        SAMPOERNA STRATEGIC SQUARE 8TH FLOOR - SOUTH TOWER, JL. JEND SUDIRMAN, JAKARTA
+      </div>
+    `;
+    document.getElementById('previewNoteNo').textContent = d.note_no || '';
+    const previewCard = document.getElementById('deliveryPreviewCard');
+    previewCard.style.display = 'block';
+    previewCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function exportPdfById(id) {
+    exportPdf(deliveries.find(d => d.id === id));
+  }
+
+  function printDeliveryNote() {
+    if (document.getElementById('deliveryPreviewCard').style.display !== 'block') return;
+    window.print();
+  }
+
+  function saveDeliveryNotePdf() {
+    // The browser's native print dialog provides the Save as PDF destination.
+    printDeliveryNote();
+  }
+
+  function closeDeliveryPreview() {
+    document.getElementById('deliveryPreviewCard').style.display = 'none';
+  }
+
+  let browser;
+  function renderDetail(d) {
+    const el = document.getElementById('recordDetail');
+    if (!d) { el.innerHTML = '<div class="rd-empty">No records yet.</div>'; return; }
+    const status = StatusRules.deliveryStatus(d, receivings);
+    el.innerHTML = `
+      <div class="rd-row"><div class="rd-key">Note No.</div><div class="rd-val">${d.note_no}</div></div>
+      <div class="rd-row"><div class="rd-key">Date</div><div class="rd-val">${d.date}</div></div>
+      <div class="rd-row"><div class="rd-key">Type</div><div class="rd-val">${d.delivery_type}</div></div>
+      <div class="rd-row"><div class="rd-key">Route</div><div class="rd-val">${routeLabel(d)}</div></div>
+      <div class="rd-row"><div class="rd-key">Driver</div><div class="rd-val">${d.driver_name || '—'} ${d.driver_phone ? '(' + d.driver_phone + ')' : ''}</div></div>
+      <div class="rd-row"><div class="rd-key">Plate No.</div><div class="rd-val">${d.plate_no || '—'}</div></div>
+      <div class="rd-row"><div class="rd-key">Qty</div><div class="rd-val">${d.qty}</div></div>
+      <div class="rd-row"><div class="rd-key">PO Customer</div><div class="rd-val">${d.po_customer || '—'}</div></div>
+      <div class="rd-row"><div class="rd-key">CI Number / No. Container</div><div class="rd-val">${d.ci_number || '—'} / ${d.no_container || '—'}</div></div>
+      <div class="rd-row"><div class="rd-key">Remarks</div><div class="rd-val">${d.remarks || '—'}</div></div>
+      <div class="rd-row"><div class="rd-key">Status</div><div class="rd-val"><span class="badge ${status==='Open'?'badge-open':'badge-closed'}">${status.toUpperCase()}</span></div></div>
+      <div class="rd-row"><div class="rd-key">POD</div><div class="rd-val">${d.pod_file_url ? `<a href="${d.pod_file_url}" target="_blank">View file</a> — received by ${d.receiver_name} on ${d.receipt_date}` : 'Not yet uploaded'}</div></div>
+      <div class="rd-row"><div class="rd-key">Attachments</div><div class="rd-val">${(d.delivery_attachments||[]).length ? d.delivery_attachments.map((a,i) => `<a href="${a.file_url}" target="_blank">File ${i+1}</a>`).join(' · ') : '—'}</div></div>`;
+  }
+
+  function renderTable() {
+    document.getElementById('tableBody').innerHTML = deliveries.map(d => {
+      const status = StatusRules.deliveryStatus(d, receivings);
+      const podCell = d.delivery_type !== 'Customer Delivery'
+        ? '<span class="muted">—</span>'
+        : (StatusRules.isPodComplete(d)
+            ? `<a href="${d.pod_file_url}" target="_blank" class="badge badge-closed" title="Received by ${d.receiver_name} on ${d.receipt_date}">✓ View</a>`
+            : `<button class="btn-view btn-sm" onclick="openPodModal(${d.id}, '${d.note_no}')">Upload POD</button>`);
+      return `<tr title="${statusNote(d, status)}">
+        <td class="mono">${d.note_no}</td><td>${d.date}</td><td>${d.delivery_type}</td><td>${routeLabel(d)}</td>
+        <td>${d.driver_name||''}</td><td class="mono">${d.plate_no||''}</td><td>${d.qty}</td>
+        <td><button class="btn-view btn-sm" onclick='viewItems(${JSON.stringify(d.delivery_items || [])}, "${d.note_no}")'>View (${(d.delivery_items||[]).length})</button></td>
+        <td><span class="badge ${status === 'Open' ? 'badge-open' : 'badge-closed'}">${status.toUpperCase()}</span></td>
+        <td>${podCell}</td>
+        <td><button class="btn-view btn-sm" onclick="exportPdfById(${Number(d.id)})">PDF</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function viewItems(items, noteNo) {
+    document.getElementById('itemsModalTitle').textContent = `Items in ${noteNo}`;
+    document.getElementById('itemsModalBody').innerHTML = items.map(it =>
+      `<tr><td class="mono">${it.sn}</td><td>${it.tire_inventory?.brand||''}</td><td>${it.tire_inventory?.tire_size||''}</td><td>${it.tire_inventory?.pattern||''}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="muted">No items found.</td></tr>';
+    document.getElementById('itemsModal').style.display = 'flex';
+  }
+
+  async function loadDeliveries() {
+    deliveries = await DeliveryDB.list();
+    receivings = await ReceivingDB.list();
+    renderTable();
+    if (browser) browser.refresh();
+    const hint = document.getElementById('noteNoHint');
+    const suggestion = suggestNextNoteNo();
+    hint.innerHTML = suggestion
+      ? `Last used: ${deliveries[0]?.note_no || '—'} · Suggested next: <a href="#" onclick="document.getElementById('hf_note_no').value='${suggestion}'; return false;" style="color:var(--info); font-weight:600;">${suggestion}</a>`
+      : '';
+  }
+
+  function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg; el.style.display = 'block';
+    el.style.background = type === 'success' ? '#DCFCE7' : '#FEE2E2';
+    el.style.color = type === 'success' ? '#166534' : '#DC2626';
+    setTimeout(() => el.style.display = 'none', 5000);
+  }
+
+  (async function start() {
+    await loadRef();
+    await loadDeliveries();
+    browser = RecordBrowser.init({
+      mountId: 'recordBrowserMount',
+      getRecords: () => deliveries,
+      searchKeys: ['note_no'],
+      onShow: renderDetail
+    });
+  })();
+</script>
+</body>
+</html>
