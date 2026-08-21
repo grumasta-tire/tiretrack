@@ -21,7 +21,7 @@
   #printArea .dn-stripe { height: 2.5mm; margin-top: 3mm; background: repeating-linear-gradient(-35deg, #111 0 3mm, #f2c230 3mm 6mm); }
   #printArea .dn-meta { font-size: 8pt; margin-bottom: 4mm; }
   #printArea .dn-meta div { display: flex; margin-bottom: 1mm; }
-  #printArea .dn-meta span.k { width: 30mm; color: #333; }
+  #printArea .dn-meta span.k { width: 31mm; color: #333; }
   #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 10pt; margin: 3mm 0 4mm; }
   #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 7.4pt; margin: 4mm 0 6mm; }
   #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 1.2mm 1.5mm; text-align: left; }
@@ -377,21 +377,15 @@
 
       <!-- ===== Section 2: Meta fields ===== -->
       <div class="dn-meta">
-        <div><span class="k">DELIVERY NOTE NO </span> : ${d.note_no || ''} </div>
+        <div><span class="k">DELIVERY NOTE NO.</span> : ${d.note_no || ''}</div>
+        <div><span class="k">No Container</span> : ${d.no_container || ''}</div>
         <div><span class="k">DELIVERY DATE</span> : ${fmtDate(d.date)}</div>
-        <div class="row-container">
-          <div class="col-50 text-left">
-            <span class="k">CI Number</span> : ${d.ci_number || ''}
-          </div>
-          <div class="col-50 text-left">
-            <span class="k">No Container</span> : ${d.no_container || ''}
-          </div>
-        </div>
+        <div><span class="k">Vendor</span> : ${d.shipping_vendor || ''}</div>
+        <div><span class="k">CI Number</span> : ${d.ci_number || ''}</div>
         <div></div>
         <div><span class="k">PO Number</span> : ${d.po_customer || ''}</div>
         <div></div>
-        <div style="text-align: left;"><span class="k">PO Date</span> : ${fmtDate(d.po_date)}</div>
-        <div style="text-align: right;"><span class="k">Vendor</span> : ${d.shipping_vendor || ''}</div>
+        <div><span class="k">PO Date</span> : ${fmtDate(d.po_date)}</div>
         <div></div>
       </div>
 
