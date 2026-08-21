@@ -6,28 +6,35 @@
 <title>TireTrack — Goods Delivery</title>
 <link rel="stylesheet" href="shared.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
   .item-row { display: grid; grid-template-columns: 40px 1.2fr 0.9fr 0.9fr 0.9fr 1.1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
   .item-row .row-no { color: var(--muted); font-size: 12.5px; text-align: center; }
   .item-row input[data-readonly] { background: #f3f4f6; color: var(--muted); }
   .items-head { display: grid; grid-template-columns: 40px 1.2fr 0.9fr 0.9fr 0.9fr 1.1fr; gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
-  #deliveryPreviewCard { display: none; }
-  #printArea { width: min(794px, 100%); box-sizing: border-box; margin: 0 auto; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; padding: 36px 40px; }
-  #printArea .dn-header { border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-  #printArea .dn-co { font-weight: bold; font-size: 13px; }
-  #printArea .dn-meta { font-size: 11px; margin-bottom: 14px; }
-  #printArea .dn-meta div { display: flex; margin-bottom: 3px; }
-  #printArea .dn-meta span.k { width: 140px; color: #333; }
-  #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 16px; margin: 10px 0 16px; }
-  #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-bottom: 18px; }
-  #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 5px 6px; text-align: left; }
+  #deliveryPreviewCard { display: none; max-width: 210mm; margin: 20px auto; }
+  #printArea { width: 190mm; min-height: 267mm; box-sizing: border-box; margin: 0 auto; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; padding: 10mm 12mm; }
+  #printArea .dn-header { padding-bottom: 3mm; margin-bottom: 5mm; }
+  #printArea .dn-logo-row { display: grid; grid-template-columns: 55mm 42mm 1fr; gap: 4mm; align-items: center; }
+  #printArea .dn-logo { width: 100%; max-height: 17mm; object-fit: contain; object-position: left center; }
+  #printArea .dn-company { font-size: 6.5pt; line-height: 1.35; text-align: right; }
+  #printArea .dn-stripe { height: 2.5mm; margin-top: 3mm; background: repeating-linear-gradient(-35deg, #111 0 3mm, #f2c230 3mm 6mm); }
+  #printArea .dn-meta { font-size: 8pt; margin-bottom: 4mm; }
+  #printArea .dn-meta div { display: flex; margin-bottom: 1mm; }
+  #printArea .dn-meta span.k { width: 31mm; color: #333; }
+  #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 10pt; margin: 3mm 0 4mm; }
+  #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 7.4pt; margin: 4mm 0 6mm; }
+  #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 1.2mm 1.5mm; text-align: left; }
   #printArea table.dn-table th { background: #f0f0f0; text-align: center; }
+  #printArea .dn-sign { display: grid; grid-template-columns: 1fr 1fr; gap: 28mm; font-size: 8pt; }
+  #printArea .dn-sign .col { min-width: 0; }
   @media print {
+    @page { size: A4 portrait; margin: 10mm; }
     body * { visibility: hidden; }
     #deliveryPreviewCard, #deliveryPreviewCard * { visibility: visible; }
-    #deliveryPreviewCard { position: absolute; inset: 0 auto auto 0; width: 100%; border: 0; box-shadow: none; }
+    #deliveryPreviewCard { position: static; width: 190mm; margin: 0 auto; border: 0; box-shadow: none; }
     #deliveryPreviewCard .preview-actions, #deliveryPreviewCard h2 { display: none !important; }
-    #printArea { width: 794px; margin: 0; padding: 28px 32px; }
+    #printArea { width: 190mm; min-height: 0; margin: 0 auto; padding: 0; }
   }
 </style>
 </head>
@@ -109,7 +116,7 @@
     </div>
     <div class="card" id="deliveryPreviewCard">
       <h2>Delivery Note Preview — <span id="previewNoteNo"></span></h2>
-      <div class="subtitle" style="margin-bottom:14px;">Review the document below. <strong>Save to PDF</strong> opens your browser's print dialog; choose <em>Save as PDF</em> as the destination.</div>
+      <div class="subtitle" style="margin-bottom:14px;">Review the document below. <strong>Save to PDF</strong> downloads the PDF file directly.</div>
       <div class="form-actions preview-actions" style="margin-bottom:16px;">
         <button class="btn-primary" onclick="printDeliveryNote()">Print</button>
         <button class="btn-secondary" onclick="saveDeliveryNotePdf()">Save to PDF</button>
@@ -357,17 +364,16 @@
     printArea.innerHTML = `
       <!-- ===== Section 1: Header ===== -->
       <div class="dn-header">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-          <div style="font-weight:bold; font-size:15px; letter-spacing:0.5px;">HAI AN GROUP &nbsp;·&nbsp; <span style="color:#c0342b;">LUAN</span> PT. LUAN TIRE INDONESIA</div>
-          <div style="font-size:9px; text-align:right; line-height:1.5;">
-            <strong>Head Office Address:</strong><br>Sampoerna Strategic Square South Tower, 8th Floor<br>Jl. Jenderal Sudirman, Kav. 45-46, South Jakarta, 12930
+        <div class="dn-logo-row">
+          <img class="dn-logo" src="logo-haian.jpg" alt="Haian Group">
+          <img class="dn-logo" src="logo-luan.jpg" alt="PT Luan Tire Indonesia">
+          <div class="dn-company">
+            <strong>Head Office Address:</strong><br>Sampoerna Strategic Square South Tower, 8th Floor<br>Jl. Jenderal Sudirman, Kav. 45-46, South Jakarta, 12930<br>
+            Member of Haian Group Co., Ltd &nbsp;|&nbsp; Web: www.haiangroup.com<br>Email: luan.indonesia@haiangroup.com
           </div>
         </div>
-        <div style="font-size:9px; margin-top:4px; color:#333;">
-          Member of Haian Group Co., Ltd &nbsp;|&nbsp; Web: www.haiangroup.com &nbsp;|&nbsp; Email: luan.indonesia@haiangroup.com
-        </div>
+        <div class="dn-stripe"></div>
       </div>
-      <div style="height:6px; margin:8px 0 16px; background-image: repeating-linear-gradient(-35deg, #111 0 8px, #F2C230 8px 16px);"></div>
 
       <!-- ===== Section 2: Meta fields ===== -->
       <div class="dn-meta">
@@ -385,10 +391,10 @@
 
       <!-- ===== Section 3: Title + parties ===== -->
       <h2 class="dn-title">DELIVERY NOTE</h2>
-      <div style="font-size:11px; margin-bottom:16px;">
-        <div style="display:flex; margin-bottom:3px;"><span class="k">From (Shipper)</span> : PT. LUAN TIRE INDONESIA</div>
-        <div style="display:flex; margin-bottom:3px;"><span class="k">To (Consignee)</span> : <strong>${customerName}</strong></div>
-        <div style="display:flex; margin-bottom:3px;"><span class="k">Address</span> : ${customerAddress}</div>
+      <div style="font-size:8pt; margin-bottom:4mm;">
+        <div style="display:flex; margin-bottom:1mm;"><span class="k" style="width:31mm;">From (Shipper)</span> : PT. LUAN TIRE INDONESIA</div>
+        <div style="display:flex; margin-bottom:1mm;"><span class="k" style="width:31mm;">To (Consignee)</span> : <strong>${customerName}</strong></div>
+        <div style="display:flex; margin-bottom:1mm;"><span class="k" style="width:31mm;">Address</span> : ${customerAddress}</div>
         <div style="display:flex;"><span class="k">PIC</span> : ${customerPic}</div>
       </div>
 
@@ -405,14 +411,14 @@
       </table>
 
       <!-- ===== Section 5: Signatures + footer ===== -->
-      <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:50px;">
+      <div style="display:flex; justify-content:space-between; font-size:8pt; margin:8mm 0 12mm;">
         <div><strong>DELIVERY BY</strong> &nbsp;:</div>
         <div><strong>RECEIVED BY</strong> &nbsp;:</div>
       </div>
       <div class="dn-sign">
         <div class="col">
           <div style="text-decoration:underline; font-weight:bold;">PT. LUAN TIRE INDONESIA</div>
-          <div class="line" style="margin-top:60px; border-top:none; padding-top:0;">
+          <div class="line" style="margin-top:16mm; border-top:none; padding-top:0; font-size:8pt;">
             Driver &nbsp;: ${d.driver_name || ''}<br>
             No HP &nbsp;&nbsp;: ${d.driver_phone || ''}<br>
             ETA &nbsp;&nbsp;&nbsp;&nbsp;: ${d.eta || ''}
@@ -420,13 +426,13 @@
         </div>
         <div class="col">
           <div style="text-decoration:underline; font-weight:bold;">${customerName}</div>
-          <div class="line" style="margin-top:20px; border-top:none; padding-top:0;">
+          <div class="line" style="margin-top:5mm; border-top:none; padding-top:0; font-size:8pt;">
             Name : ${d.receiver_name || ''}<br>
             Date &nbsp;: ${fmtDate(d.receipt_date)}
           </div>
         </div>
       </div>
-      <div style="margin-top:40px; font-size:10px; color:#333;">
+      <div style="margin-top:12mm; font-size:7.5pt; color:#333;">
         PT. LUAN TIRE INDONESIA<br>
         SAMPOERNA STRATEGIC SQUARE 8TH FLOOR - SOUTH TOWER, JL. JEND SUDIRMAN, JAKARTA
       </div>
@@ -446,9 +452,22 @@
     window.print();
   }
 
-  function saveDeliveryNotePdf() {
-    // The browser's native print dialog provides the Save as PDF destination.
-    printDeliveryNote();
+  async function saveDeliveryNotePdf() {
+    const printArea = document.getElementById('printArea');
+    if (!printArea.innerHTML.trim()) return;
+    if (typeof window.html2pdf !== 'function') { showErrorDialog('PDF library could not be loaded. Check your internet connection and try again.'); return; }
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    try {
+      await html2pdf().set({
+        margin: 0,
+        filename: `DeliveryNote_${document.getElementById('previewNoteNo').textContent || 'document'}.pdf`,
+        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      }).from(printArea).save();
+    } catch (err) {
+      console.error('Could not save delivery PDF:', err);
+      showErrorDialog('Could not create the PDF. Please try again.');
+    }
   }
 
   function closeDeliveryPreview() {

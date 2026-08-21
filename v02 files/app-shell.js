@@ -11,8 +11,8 @@ const NAV_STRUCTURE = [
   {
     type: 'group', key: 'movement', label: 'Goods Movement', icon: '&#8646;',
     children: [
-      { key: 'goods-receiving', label: 'Goods Receiving', href: 'goods-receiving.html' },
       { key: 'goods-delivery', label: 'Goods Delivery', href: 'goods-delivery.html' },
+      { key: 'goods-receiving', label: 'Goods Receiving', href: 'goods-receiving.html' },
       { key: 'customer-return', label: 'Return', href: 'customer-return.html' }
     ]
   },
