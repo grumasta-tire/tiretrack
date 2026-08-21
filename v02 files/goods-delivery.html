@@ -379,13 +379,13 @@
       <div class="dn-meta">
         <div><span class="k">DELIVERY NOTE NO.</span> : ${d.note_no || ''}</div>
         <div><span class="k">DELIVERY DATE</span> : ${fmtDate(d.date)}</div>
-        <div><span class="k">CI Number</span> : ${d.ci_number || ''}</div>  
-        <div><span class="k">No Container</span> : ${d.no_container || ''}</div>
+        <div style="text-align: left;"><span class="k">CI Number</span> : ${d.ci_number || ''}</div>  
+        <div style="text-align: right;"><span class="k">No Container</span> : ${d.no_container || ''}</div>
         <div></div>
         <div><span class="k">PO Number</span> : ${d.po_customer || ''}</div>
         <div></div>
-        <div><span class="k">PO Date</span> : ${fmtDate(d.po_date)}</div>
-        <div><span class="k">Vendor</span> : ${d.shipping_vendor || ''}</div>
+        <div style="text-align: left;"><span class="k">PO Date</span> : ${fmtDate(d.po_date)}</div>
+        <div style="text-align: right;"><span class="k">Vendor</span> : ${d.shipping_vendor || ''}</div>
         <div></div>
       </div>
 
