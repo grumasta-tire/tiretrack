@@ -467,6 +467,12 @@
     }
 
     const printArea = exportPdf(delivery, false);
+    // Reset the page scroll to the very top so it matches the scrollX/scrollY
+    // override passed to html2canvas below. If the page was scrolled down
+    // (e.g. user had scrolled to the delivery table before clicking "PDF"),
+    // leaving that mismatched caused the top of the document (logo, note
+    // number, title) to be cropped out of the captured image.
+    window.scrollTo(0, 0);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await Promise.all([...printArea.querySelectorAll('img')].map(image => {
       if (image.complete) return Promise.resolve();
@@ -485,7 +491,13 @@
           // Always capture from the document origin; using the current page
           // scroll offset shifts the document and can crop its header.
           scrollX: 0,
-          scrollY: 0
+          scrollY: 0,
+          // Make sure the full height of the (now-visible) preview card is
+          // considered when rendering, not just the current viewport size —
+          // otherwise content below the fold of the original window can be
+          // cut off.
+          windowWidth: document.documentElement.scrollWidth,
+          windowHeight: document.documentElement.scrollHeight
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       }).from(printArea).toPdf().outputPdf('blob');
@@ -508,12 +520,24 @@
     const printArea = document.getElementById('printArea');
     if (!printArea.innerHTML.trim()) return;
     if (typeof window.html2pdf !== 'function') { showErrorDialog('PDF library could not be loaded. Check your internet connection and try again.'); return; }
+    // Same fix as exportPdfById: reset scroll to the top and pin the
+    // html2canvas capture to (0,0) so the preview card's header isn't
+    // cropped when this is triggered while the page is scrolled down.
+    window.scrollTo(0, 0);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     try {
       await html2pdf().set({
         margin: 0,
         filename: `DeliveryNote_${document.getElementById('previewNoteNo').textContent || 'document'}.pdf`,
-        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
+        html2canvas: {
+          scale: 2,
+          backgroundColor: '#ffffff',
+          useCORS: true,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: document.documentElement.scrollWidth,
+          windowHeight: document.documentElement.scrollHeight
+        },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       }).from(printArea).save();
     } catch (err) {
