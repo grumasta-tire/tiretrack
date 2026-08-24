@@ -482,8 +482,10 @@
           scale: 2,
           backgroundColor: '#ffffff',
           useCORS: true,
-          scrollX: -window.scrollX,
-          scrollY: -window.scrollY
+          // Always capture from the document origin; using the current page
+          // scroll offset shifts the document and can crop its header.
+          scrollX: 0,
+          scrollY: 0
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       }).from(printArea).toPdf().outputPdf('blob');
