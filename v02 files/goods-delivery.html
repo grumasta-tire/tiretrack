@@ -12,16 +12,34 @@
   .item-row .row-no { color: var(--muted); font-size: 12.5px; text-align: center; }
   .item-row input[data-readonly] { background: #f3f4f6; color: var(--muted); }
   .items-head { display: grid; grid-template-columns: 40px 1.2fr 0.9fr 0.9fr 0.9fr 1.1fr; gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+
+  /* ---- Sectioned Shipment Details form ---- */
+  .form-section { margin-bottom: 26px; }
+  .form-section:last-child { margin-bottom: 0; }
+  .form-section-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--navy); margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .form-section-title::before { content: ""; width: 4px; height: 13px; background: var(--amber); border-radius: 2px; flex-shrink: 0; }
+  .form-section .dg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .form-section .dg-grid.dg-grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .form-section .dg-grid > div { min-width: 0; }
+  .form-section .dg-grid input, .form-section .dg-grid select { width: 100%; box-sizing: border-box; }
+  .form-section-full { grid-column: 1 / -1; }
+  @media (max-width: 900px) { .form-section .dg-grid, .form-section .dg-grid.dg-grid-3 { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .form-section .dg-grid, .form-section .dg-grid.dg-grid-3 { grid-template-columns: 1fr; } }
+  .generate-rows-actions { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; }
   #deliveryPreviewCard { display: none; max-width: 210mm; margin: 20px auto; }
   #printArea { width: 190mm; box-sizing: border-box; margin: 0 auto; background: #fff; color: #111; font-family: Arial, Helvetica, sans-serif; padding: 10mm 12mm; }
   #printArea .dn-header { padding-bottom: 3mm; margin-bottom: 5mm; }
   #printArea .dn-logo-row { display: grid; grid-template-columns: 55mm 42mm 1fr; gap: 4mm; align-items: center; }
   #printArea .dn-logo { width: 100%; max-height: 17mm; object-fit: contain; object-position: left center; }
   #printArea .dn-company { font-size: 6.5pt; line-height: 1.35; text-align: right; }
-  #printArea .dn-stripe { height: 2.5mm; margin-top: 3mm; background: repeating-linear-gradient(-35deg, #111 0 6mm, #f2c230 6mm 12mm); }
-  #printArea .dn-meta { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6mm; row-gap: 1.5mm; font-size: 8pt; margin-bottom: 4mm; }
-  #printArea .dn-meta div { display: flex; }
-  #printArea .dn-meta span.k { width: 31mm; flex-shrink: 0; color: #333; }
+  #printArea .dn-stripe { height: 2.5mm; margin-top: 3mm; background: repeating-linear-gradient(-35deg, #111 0 3mm, #f2c230 3mm 6mm); }
+  #printArea .dn-meta { font-size: 8pt; margin-bottom: 4mm; }
+  #printArea .dn-meta div { display: flex; margin-bottom: 1mm; }
+  #printArea .dn-meta span.k { width: 31mm; color: #333; }
   #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 10pt; margin: 3mm 0 4mm; }
   #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 7.4pt; margin: 4mm 0 6mm; }
   #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 1.2mm 1.5mm; text-align: left; }
@@ -53,38 +71,66 @@
 
     <div class="card">
       <h2>Shipment Details</h2>
-      <div class="form-grid">
-        <div><label>Delivery Note No.</label><input type="text" id="hf_note_no" placeholder="e.g. SJ-2026-0712"><div class="subtitle" id="noteNoHint" style="margin-top:4px; font-size:11.5px;"></div></div>
-        <div><label>Delivery Date</label><input type="date" id="hf_date"></div>
-        <div><label>Delivery Type</label>
-          <select id="hf_type" onchange="toggleDeliveryType()">
-            <option value="Customer Delivery">Customer Delivery</option>
-            <option value="Warehouse Transfer">Warehouse Transfer</option>
-          </select>
+
+      <!-- ===== Section 1: Basic Information ===== -->
+      <div class="form-section">
+        <div class="form-section-title">Basic Information</div>
+        <div class="dg-grid">
+          <div><label>Delivery Note No.</label><input type="text" id="hf_note_no" placeholder="e.g. SJ-2026-0712"><div class="subtitle" id="noteNoHint" style="margin-top:4px; font-size:11.5px;"></div></div>
+          <div><label>Delivery Date</label><input type="date" id="hf_date"></div>
+          <div><label>Delivery Type</label>
+            <select id="hf_type" onchange="toggleDeliveryType()">
+              <option value="Customer Delivery">Customer Delivery</option>
+              <option value="Warehouse Transfer">Warehouse Transfer</option>
+            </select>
+          </div>
+          <div><label>From Warehouse</label><select id="hf_from_whs"></select></div>
         </div>
-        <div><label>From Warehouse</label><select id="hf_from_whs"></select></div>
-        <div id="toWhsWrap" style="display:none;"><label>To Warehouse</label><select id="hf_to_whs"></select></div>
-        <div id="customerWrap"><label>Customer</label><select id="hf_customer" onchange="populateSites()"></select></div>
-        <div id="siteWrap"><label>Site</label><select id="hf_site"></select></div>
-        <div><label>Driver Name</label><input type="text" id="hf_driver_name" placeholder="Driver's full name"></div>
-        <div><label>Driver Phone</label><input type="text" id="hf_driver_phone" placeholder="e.g. 0812xxxxxxx"></div>
-        <div><label>Vehicle Plate Number</label><input type="text" id="hf_plate" placeholder="e.g. KT 8821 QA"></div>
-        <div><label>Total Qty to Ship</label><input type="number" id="hf_qty" min="1" placeholder="e.g. 12"></div>
-        <div><label>Attachments <span style="text-transform:none; font-weight:400;">(optional, up to 4 files)</span></label>
-          <input type="file" id="hf_attachments" accept="image/*,.pdf" multiple onchange="validateAttachmentCount()">
-          <div class="subtitle" id="attachmentHint" style="margin-top:4px; font-size:11.5px;"></div>
-        </div>
-        <div><label>PO Customer</label><input type="text" id="hf_po_customer" placeholder="Customer's purchase order number"></div>
-        <div><label>CI Number</label><input type="text" id="hf_ci_number" placeholder="Optional"></div>
-        <div><label>PO Date</label><input type="date" id="hf_po_date"></div>
-        <div><label>No. Container</label><input type="text" id="hf_no_container" placeholder="Optional"></div>
-        <div><label>Vendor <span style="text-transform:none; font-weight:400;">(shipping/pickup arrangement)</span></label><input type="text" id="hf_shipping_vendor" placeholder='e.g. "PICKUP SELF" or forwarder name'></div>
-        <div><label>ETA</label><input type="text" id="hf_eta" placeholder="Optional"></div>
-        <div style="align-self:end;"><button class="btn-secondary" onclick="generateItemRows()">Generate Item Rows</button></div>
       </div>
-      <div style="margin-top:14px;">
-        <label>Remarks <span style="text-transform:none; font-weight:400;">(optional)</span></label>
-        <textarea id="hf_remarks" rows="2" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; font-family:inherit; resize:vertical;"></textarea>
+
+      <!-- ===== Section 2: Destination & Customer Info ===== -->
+      <div class="form-section">
+        <div class="form-section-title">Destination &amp; Customer Info</div>
+        <div class="dg-grid dg-grid-3">
+          <div id="toWhsWrap" style="display:none;"><label>To Warehouse</label><select id="hf_to_whs"></select></div>
+          <div id="customerWrap"><label>Customer</label><select id="hf_customer" onchange="populateSites()"></select></div>
+          <div id="siteWrap"><label>Site</label><select id="hf_site"></select></div>
+          <div><label>PO Customer</label><input type="text" id="hf_po_customer" placeholder="Customer's purchase order number"></div>
+          <div><label>PO Date</label><input type="date" id="hf_po_date"></div>
+          <div><label>CI Number <span style="text-transform:none; font-weight:400;">(optional)</span></label><input type="text" id="hf_ci_number" placeholder="Optional"></div>
+        </div>
+      </div>
+
+      <!-- ===== Section 3: Transport & Driver Details ===== -->
+      <div class="form-section">
+        <div class="form-section-title">Transport &amp; Driver Details</div>
+        <div class="dg-grid dg-grid-3">
+          <div><label>Driver Name</label><input type="text" id="hf_driver_name" placeholder="Driver's full name"></div>
+          <div><label>Driver Phone</label><input type="text" id="hf_driver_phone" placeholder="e.g. 0812xxxxxxx"></div>
+          <div><label>Vehicle Plate Number</label><input type="text" id="hf_plate" placeholder="e.g. KT 8821 QA"></div>
+          <div><label>Vendor <span style="text-transform:none; font-weight:400;">(shipping/pickup arrangement)</span></label><input type="text" id="hf_shipping_vendor" placeholder='e.g. "PICKUP SELF" or forwarder name'></div>
+          <div><label>No. Container <span style="text-transform:none; font-weight:400;">(optional)</span></label><input type="text" id="hf_no_container" placeholder="Optional"></div>
+          <div><label>ETA <span style="text-transform:none; font-weight:400;">(optional)</span></label><input type="text" id="hf_eta" placeholder="Optional"></div>
+        </div>
+      </div>
+
+      <!-- ===== Section 4: Cargo & Summary ===== -->
+      <div class="form-section">
+        <div class="form-section-title">Cargo &amp; Summary</div>
+        <div class="dg-grid dg-grid-3">
+          <div><label>Total Qty to Ship</label><input type="number" id="hf_qty" min="1" placeholder="e.g. 12"></div>
+          <div class="form-section-full" style="grid-column: span 2;"><label>Attachments <span style="text-transform:none; font-weight:400;">(optional, up to 4 files)</span></label>
+            <input type="file" id="hf_attachments" accept="image/*,.pdf" multiple onchange="validateAttachmentCount()">
+            <div class="subtitle" id="attachmentHint" style="margin-top:4px; font-size:11.5px;"></div>
+          </div>
+          <div class="form-section-full">
+            <label>Remarks <span style="text-transform:none; font-weight:400;">(optional)</span></label>
+            <textarea id="hf_remarks" rows="2" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:6px; font-size:13.5px; font-family:inherit; resize:vertical; box-sizing:border-box;"></textarea>
+          </div>
+        </div>
+        <div class="generate-rows-actions">
+          <button class="btn-secondary" onclick="generateItemRows()">Generate Item Rows</button>
+        </div>
       </div>
     </div>
 
@@ -353,6 +399,24 @@
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
+  // Converts a CSS pixel measurement to millimeters (96 CSS px per inch).
+  function pxToMm(px) { return px * 25.4 / 96; }
+
+  // Sizes the PDF page to exactly match the rendered content instead of a
+  // fixed A4 height. This is the actual fix for the "page gets cut off"
+  // bug: html2pdf's automatic multi-page slicing (used when content is
+  // taller than a standard A4 page) has a known miscalculation in some
+  // versions that drops the top portion of page 1. A delivery note is a
+  // single short document, so instead of relying on that slicing logic at
+  // all, we give jsPDF a custom page height equal to the content's real
+  // height — there is then nothing to paginate, so the bug can't trigger.
+  function getExactPdfFormat(el) {
+    const rect = el.getBoundingClientRect();
+    const widthMm = pxToMm(rect.width);
+    const heightMm = pxToMm(rect.height) + 2; // tiny buffer so nothing rounds off the bottom edge
+    return [widthMm, heightMm];
+  }
+
   function exportPdf(d, scrollToPreview = true) {
     if (!d) { showErrorDialog('Delivery record was not found. Please refresh and try again.'); return; }
     const items = d.delivery_items || [];
@@ -418,17 +482,17 @@
       <div class="dn-sign">
         <div class="col">
           <div style="text-decoration:underline; font-weight:bold;">PT. LUAN TIRE INDONESIA</div>
-          <div class="line" style="margin-top:10mm; border-top:none; padding-top:0; font-size:8pt;">
-            <div style="display:flex;"><span class="k" style="width:14mm;">Driver</span> : ${d.driver_name || ''}</div>
-            <div style="display:flex;"><span class="k" style="width:14mm;">No HP</span> : ${d.driver_phone || ''}</div>
-            <div style="display:flex;"><span class="k" style="width:14mm;">ETA</span> : ${d.eta || ''}</div>
+          <div class="line" style="margin-top:16mm; border-top:none; padding-top:0; font-size:8pt;">
+            Driver &nbsp;: ${d.driver_name || ''}<br>
+            No HP &nbsp;&nbsp;: ${d.driver_phone || ''}<br>
+            ETA &nbsp;&nbsp;&nbsp;&nbsp;: ${d.eta || ''}
           </div>
         </div>
         <div class="col">
           <div style="text-decoration:underline; font-weight:bold;">${customerName}</div>
-          <div class="line" style="margin-top:10mm; border-top:none; padding-top:0; font-size:8pt;">
-            <div style="display:flex;"><span class="k" style="width:14mm;">Name</span> : ${d.receiver_name || ''}</div>
-            <div style="display:flex;"><span class="k" style="width:14mm;">Date</span> : ${fmtDate(d.receipt_date)}</div>
+          <div class="line" style="margin-top:5mm; border-top:none; padding-top:0; font-size:8pt;">
+            Name : ${d.receiver_name || ''}<br>
+            Date &nbsp;: ${fmtDate(d.receipt_date)}
           </div>
         </div>
       </div>
@@ -467,12 +531,6 @@
     }
 
     const printArea = exportPdf(delivery, false);
-    // Reset the page scroll to the very top so it matches the scrollX/scrollY
-    // override passed to html2canvas below. If the page was scrolled down
-    // (e.g. user had scrolled to the delivery table before clicking "PDF"),
-    // leaving that mismatched caused the top of the document (logo, note
-    // number, title) to be cropped out of the captured image.
-    window.scrollTo(0, 0);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await Promise.all([...printArea.querySelectorAll('img')].map(image => {
       if (image.complete) return Promise.resolve();
@@ -485,22 +543,13 @@
       const pdfBlob = await html2pdf().set({
         margin: 0,
         html2canvas: {
-          // 1.5 is plenty sharp for an A4 document and renders noticeably
-          // faster than 2 (roughly half the pixels to draw).
-          scale: 1.5,
+          scale: 2,
           backgroundColor: '#ffffff',
-          // useCORS isn't needed for same-origin local images and adds
-          // needless overhead per image.
+          useCORS: true,
           // Always capture from the document origin; using the current page
           // scroll offset shifts the document and can crop its header.
           scrollX: 0,
-          scrollY: 0,
-          // Make sure the full height of the (now-visible) preview card is
-          // considered when rendering, not just the current viewport size —
-          // otherwise content below the fold of the original window can be
-          // cut off.
-          windowWidth: document.documentElement.scrollWidth,
-          windowHeight: document.documentElement.scrollHeight
+          scrollY: 0
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       }).from(printArea).toPdf().outputPdf('blob');
@@ -523,23 +572,12 @@
     const printArea = document.getElementById('printArea');
     if (!printArea.innerHTML.trim()) return;
     if (typeof window.html2pdf !== 'function') { showErrorDialog('PDF library could not be loaded. Check your internet connection and try again.'); return; }
-    // Same fix as exportPdfById: reset scroll to the top and pin the
-    // html2canvas capture to (0,0) so the preview card's header isn't
-    // cropped when this is triggered while the page is scrolled down.
-    window.scrollTo(0, 0);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     try {
       await html2pdf().set({
         margin: 0,
         filename: `DeliveryNote_${document.getElementById('previewNoteNo').textContent || 'document'}.pdf`,
-        html2canvas: {
-          scale: 1.5,
-          backgroundColor: '#ffffff',
-          scrollX: 0,
-          scrollY: 0,
-          windowWidth: document.documentElement.scrollWidth,
-          windowHeight: document.documentElement.scrollHeight
-        },
+        html2canvas: { scale: 2, backgroundColor: '#ffffff', useCORS: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       }).from(printArea).save();
     } catch (err) {
