@@ -166,7 +166,7 @@
   const DeliveryDB = {
     async list() {
       const { data, error } = await sb.from('goods_delivery')
-        .select('*, customers(name, address, pic), customer_sites(site_name), delivery_items(sn, remarks, tire_inventory(brand, tire_size, pattern)), delivery_attachments(id, file_url)')
+        .select('*, customers(name, address, pic), customer_sites(site_name), vendors(name), delivery_items(sn, remarks, tire_inventory(brand, tire_size, pattern)), delivery_attachments(id, file_url)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data;

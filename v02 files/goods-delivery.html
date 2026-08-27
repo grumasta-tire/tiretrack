@@ -108,7 +108,9 @@
           <div><label>Driver Name</label><input type="text" id="hf_driver_name" placeholder="Driver's full name"></div>
           <div><label>Driver Phone</label><input type="text" id="hf_driver_phone" placeholder="e.g. 0812xxxxxxx"></div>
           <div><label>Vehicle Plate Number</label><input type="text" id="hf_plate" placeholder="e.g. KT 8821 QA"></div>
-          <div><label>Vendor <span style="text-transform:none; font-weight:400;">(shipping/pickup arrangement)</span></label><input type="text" id="hf_shipping_vendor" placeholder='e.g. "PICKUP SELF" or forwarder name'></div>
+          <div><label>Vendor <span style="text-transform:none; font-weight:400;">(shipping/pickup arrangement)</span></label>
+            <select id="hf_vendor"><option value="">Select vendor</option></select>
+          </div>
           <div><label>No. Container <span style="text-transform:none; font-weight:400;">(optional)</span></label><input type="text" id="hf_no_container" placeholder="Optional"></div>
           <div><label>ETA <span style="text-transform:none; font-weight:400;">(optional)</span></label><input type="text" id="hf_eta" placeholder="Optional"></div>
         </div>
@@ -213,9 +215,11 @@
   async function loadRef() {
     customers = await RefDB.customers();
     warehouses = await RefDB.warehouses();
+    const vendors = await RefDB.vendors();
     document.getElementById('hf_customer').innerHTML = customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     document.getElementById('hf_from_whs').innerHTML = warehouses.map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
     document.getElementById('hf_to_whs').innerHTML = warehouses.map(w => `<option value="${w.code}">${w.code} — ${w.name}</option>`).join('');
+    document.getElementById('hf_vendor').innerHTML = '<option value="">Select vendor</option>' + vendors.map(v => `<option value="${v.id}">${v.name}</option>`).join('');
     populateSites();
   }
 
@@ -284,7 +288,8 @@
   }
 
   function clearForm() {
-    ['hf_note_no','hf_date','hf_driver_name','hf_driver_phone','hf_plate','hf_qty','hf_attachments','hf_po_customer','hf_ci_number','hf_po_date','hf_no_container','hf_shipping_vendor','hf_eta','hf_remarks'].forEach(id => document.getElementById(id).value = '');
+    ['hf_note_no','hf_date','hf_driver_name','hf_driver_phone','hf_plate','hf_qty','hf_attachments','hf_po_customer','hf_ci_number','hf_po_date','hf_no_container','hf_eta','hf_remarks'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('hf_vendor').value = '';
     document.getElementById('attachmentHint').textContent = '';
     document.getElementById('itemsCard').style.display = 'none';
     document.getElementById('itemsWrap').innerHTML = '';
@@ -317,7 +322,7 @@
     const ci_number = document.getElementById('hf_ci_number').value;
     const po_date = document.getElementById('hf_po_date').value || null;
     const no_container = document.getElementById('hf_no_container').value;
-    const shipping_vendor = document.getElementById('hf_shipping_vendor').value;
+    const vendor_id = document.getElementById('hf_vendor').value || null;
     const eta = document.getElementById('hf_eta').value;
     const remarks = document.getElementById('hf_remarks').value;
     const qty = parseInt(document.getElementById('hf_qty').value);
@@ -328,7 +333,7 @@
     if (items.some(it => !it.sn || !it.brand)) { showErrorDialog('Every item row needs a valid Serial Number found in stock before saving.'); return; }
 
     try {
-      await DeliveryDB.create({ note_no, date, delivery_type, from_whs, to_whs, customer_id, site_id, driver_name, driver_phone, plate_no, po_customer, ci_number, po_date, no_container, shipping_vendor, eta, remarks, qty }, items, [...document.getElementById('hf_attachments').files]);
+      await DeliveryDB.create({ note_no, date, delivery_type, from_whs, to_whs, customer_id, site_id, driver_name, driver_phone, plate_no, po_customer, ci_number, po_date, no_container, vendor_id, eta, remarks, qty }, items, [...document.getElementById('hf_attachments').files]);
       clearForm();
       await loadDeliveries();
     } catch (err) {
@@ -444,7 +449,7 @@
         <div><span class="k">DELIVERY NOTE NO.</span> : ${d.note_no || ''}</div>
         <div><span class="k">No Container</span> : ${d.no_container || ''}</div>
         <div><span class="k">DELIVERY DATE</span> : ${fmtDate(d.date)}</div>
-        <div><span class="k">Vendor</span> : ${d.shipping_vendor || ''}</div>
+        <div><span class="k">Vendor</span> : ${d.vendors ? d.vendors.name : ''}</div>
         <div><span class="k">CI Number</span> : ${d.ci_number || ''}</div>
         <div></div>
         <div><span class="k">PO Number</span> : ${d.po_customer || ''}</div>
