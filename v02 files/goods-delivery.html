@@ -36,16 +36,29 @@
   #printArea .dn-header-table { display: table; width: 100%; table-layout: fixed; }
   #printArea .dn-header-cell { display: table-cell; vertical-align: middle; padding: 0 2.5mm; }
   #printArea .dn-header-cell:first-child { padding-left: 0; }
-  #printArea .dn-header-cell:last-child { padding-right: 0; text-align: left; }
+  #printArea .dn-header-cell:last-child { padding-right: 0; text-align: right; }
   #printArea .dn-logo-cell { width: 28mm; }
   #printArea .dn-logo { max-width: 100%; max-height: 14mm; object-fit: contain; }
   #printArea .dn-info-cell { font-size: 5.3pt; line-height: 1.35; font-family: Arial, Helvetica, sans-serif; }
   #printArea .dn-info-cell strong { font-size: 5.5pt; }
-  #printArea .dn-stripe { height: 2.5mm; margin-top: 3mm; background: repeating-linear-gradient(-35deg, #111 0 3mm, #f2c230 3mm 6mm); }
-  #printArea .dn-meta { font-size: 8pt; margin-bottom: 4mm; }
-  #printArea .dn-meta div { display: flex; margin-bottom: 1mm; }
-  #printArea .dn-meta span.k { width: 31mm; color: #333; }
-  #printArea h2.dn-title { text-align: center; text-decoration: underline; font-size: 10pt; margin: 3mm 0 4mm; }
+  #printArea .dn-stripe { height: 2.5mm; margin-top: 3mm; display: flex; }
+  #printArea .dn-stripe-black { flex: 0 0 78%; background: repeating-linear-gradient(-35deg, #111 0 3mm, #fff 3mm 6mm); }
+  #printArea .dn-stripe-yellow { flex: 1 1 auto; background: repeating-linear-gradient(-35deg, #f2c230 0 3mm, #fff 3mm 6mm); }
+  #printArea .dn-meta-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 4mm; }
+  #printArea .dn-meta-table > tbody > tr > td { vertical-align: top; padding: 0; }
+  #printArea .dn-meta-table > tbody > tr > td:first-child { width: 62%; padding-right: 6mm; }
+  #printArea .dn-kv { border-collapse: collapse; width: 100%; }
+  #printArea .dn-kv td { padding: 0.6mm 0; border: none; }
+  #printArea .dn-kv td.k { white-space: nowrap; color: #333; }
+  #printArea .dn-kv td.c { width: 3mm; }
+  #printArea .dn-kv td.v { padding-left: 4px; width: 100%; }
+  #printArea h2.dn-title { text-align: center; text-decoration: underline; font-weight: bold; font-size: 10pt; margin: 3mm 0 4mm; }
+  #printArea h2.dn-title::before { content: none !important; }
+  #printArea .dn-parties { border-collapse: collapse; font-size: 8pt; margin-bottom: 4mm; }
+  #printArea .dn-parties td { padding: 0.6mm 0; border: none; vertical-align: top; }
+  #printArea .dn-parties td.k { white-space: nowrap; color: #333; padding-right: 0; }
+  #printArea .dn-parties td.c { width: 3mm; }
+  #printArea .dn-parties td.v { padding-left: 4px; }
   #printArea table.dn-table { width: 100%; border-collapse: collapse; font-size: 7.4pt; margin: 4mm 0 6mm; }
   #printArea table.dn-table th, #printArea table.dn-table td { border: 1px solid #333; padding: 1.2mm 1.5mm; text-align: left; }
   #printArea table.dn-table th { background: #f0f0f0; text-align: center; }
@@ -433,6 +446,8 @@
     const customerName = d.customers ? d.customers.name : '';
     const customerAddress = d.customers ? (d.customers.address || '') : '';
     const customerPic = d.customers ? (d.customers.pic || '') : '';
+    const customerContact = d.customers ? (d.customers.contact || '') : '';
+    const customerPicLine = [customerPic, customerContact].filter(Boolean).join(' - ');
 
     const printArea = document.getElementById('printArea');
     printArea.innerHTML = `
@@ -466,31 +481,41 @@
             South Jakarta, Indonesia, 12820
           </div>
         </div>
-        <div class="dn-stripe"></div>
+        <div class="dn-stripe">
+          <div class="dn-stripe-black"></div>
+          <div class="dn-stripe-yellow"></div>
+        </div>
       </div>
 
-      <!-- ===== Section 2: Meta fields ===== -->
-      <div class="dn-meta">
-        <div><span class="k">DELIVERY NOTE NO.</span> : ${d.note_no || ''}</div>
-        <div><span class="k">No Container</span> : ${d.no_container || ''}</div>
-        <div><span class="k">DELIVERY DATE</span> : ${fmtDate(d.date)}</div>
-        <div><span class="k">Vendor</span> : ${d.vendors ? d.vendors.name : ''}</div>
-        <div><span class="k">CI Number</span> : ${d.ci_number || ''}</div>
-        <div></div>
-        <div><span class="k">PO Number</span> : ${d.po_customer || ''}</div>
-        <div></div>
-        <div><span class="k">PO Date</span> : ${fmtDate(d.po_date)}</div>
-        <div></div>
-      </div>
+      <!-- ===== Section 2: Meta fields (2 columns, colon-aligned) ===== -->
+      <table class="dn-meta-table">
+        <tr>
+          <td>
+            <table class="dn-kv">
+              <tr><td class="k">DELIVERY NOTE NO.</td><td class="c">:</td><td class="v">${d.note_no || ''}</td></tr>
+              <tr><td class="k">DELIVERY DATE</td><td class="c">:</td><td class="v">${fmtDate(d.date)}</td></tr>
+              <tr><td class="k">CI Number</td><td class="c">:</td><td class="v">${d.ci_number || ''}</td></tr>
+              <tr><td class="k">PO Number</td><td class="c">:</td><td class="v"><strong>${d.po_customer || ''}</strong></td></tr>
+              <tr><td class="k">PO Date</td><td class="c">:</td><td class="v">${fmtDate(d.po_date)}</td></tr>
+            </table>
+          </td>
+          <td>
+            <table class="dn-kv">
+              <tr><td class="k">No Container</td><td class="c">:</td><td class="v">${d.no_container || ''}</td></tr>
+              <tr><td class="k">Vendor</td><td class="c">:</td><td class="v">${d.vendors ? d.vendors.name : ''}</td></tr>
+            </table>
+          </td>
+        </tr>
+      </table>
 
       <!-- ===== Section 3: Title + parties ===== -->
       <h2 class="dn-title">DELIVERY NOTE</h2>
-      <div style="font-size:8pt; margin-bottom:4mm;">
-        <div style="display:flex; margin-bottom:1mm;"><span class="k" style="width:31mm;">From (Shipper)</span> : PT. LUAN TIRE INDONESIA</div>
-        <div style="display:flex; margin-bottom:1mm;"><span class="k" style="width:31mm;">To (Consignee)</span> : <strong>${customerName}</strong></div>
-        <div style="display:flex; margin-bottom:1mm;"><span class="k" style="width:31mm;">Address</span> : ${customerAddress}</div>
-        <div style="display:flex;"><span class="k">PIC</span> : ${customerPic}</div>
-      </div>
+      <table class="dn-parties">
+        <tr><td class="k">From (Shipper)</td><td class="c">:</td><td class="v">PT. LUAN TIRE INDONESIA</td></tr>
+        <tr><td class="k">To (Consignee)</td><td class="c">:</td><td class="v"><strong>${customerName}</strong></td></tr>
+        <tr><td class="k">Address</td><td class="c">:</td><td class="v">${customerAddress}</td></tr>
+        <tr><td class="k">PIC</td><td class="c">:</td><td class="v">${customerPicLine}</td></tr>
+      </table>
 
       <!-- ===== Section 4: Item table ===== -->
       <table class="dn-table">
